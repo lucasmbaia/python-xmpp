@@ -7,36 +7,12 @@ from Crypto.Cipher import AES, PKCS1_OAEP
 from etcdf import Etcd
 
 if __name__ == '__main__':
-  #private = RSA.importKey('id_rsa')
-  data = 'Ola Mundo'.encode("utf-8")
+  p = Etcd('127.0.0.1', 2379)
 
-  key = open('id_rsa', 'rb').read()
-  private = RSA.importKey(key)
-  session_key = get_random_bytes(16)
-
-  cipher_rsa = PKCS1_OAEP.new(private)
-  enc_session_key = cipher_rsa.encrypt(session_key)
-
-  cipher_aes = AES.new(session_key, AES.MODE_EAX)
-  ciphertext, tag = cipher_aes.encrypt_and_digest(data)
-
-  print(ciphertext, tag)
-  print(private.publickey().exportKey())
-
-  public_key = RSA.importKey(open('id_rsa.pub', 'rb').read())
-
-  pepeca = PKCS1_OAEP.new(public_key)
-  session_key = cipher_rsa.decrypt(enc_session_key)
-
-  cipher_des = AES.new(session_key, AES.MODE_EAX, cipher_aes.nonce)
-  datad = cipher_des.decrypt_and_verify(ciphertext, tag)
-  print(datad.decode("utf-8"))
-#  p = Etcd('127.0.0.1', 2379)
-
-#  try:
-#    p.write('/python/app1', {'string': 'test', 'number': 3})
-#  except Exception as e:
-#    print(e)
+  try:
+    p.write('/python/app1', {'jid': 'container@localhost', 'password': 'hlzGhMWM0sEdE2Z2MQyjp0E2H7s00TAUOs8yOxWs0B01tGlouJJjvEvFRxKtw6juzn9UrZFGU4gqDMTnNrV1RADqgV8QjufnvHaHhwvOP8paO1irH5Ffcfl7RCr3IoXm2iNjWZO6IDr8P3U8O86XRJ4uFjr7bjZlDWmi+NijG7PZhqy0J9riUS7SWWgzA8ZGDFaSmafOTR0A78llz5cau5y0sL7DNFaPtg5NCm2wzut1xIHP5mU7UO3KUpphrTtoleURwnkXD1a3nEad+Y6K2PAFt43asl5mFGGotNT+wVUPK5thJORee5ixjYt5tutx3za9ALY0JBjE/RSz4LajDA=='})
+  except Exception as e:
+    print(e)
 
 #  try:
 #    val = p.read('/python/app1')

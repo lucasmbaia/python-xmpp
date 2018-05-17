@@ -25,6 +25,14 @@ if sys.version_info < (3, 0):
 else:
         raw_input = input
 
+class Containers(ElementBase):
+  namespace = 'jabber:iq:containers'
+  name = 'query'
+  plugin_attrib = 'containers'
+  interfaces = set(('total', 'result'))
+  sub_interfaces = interfaces
+  form_fields = set(('total', 'result'))
+
 class Register(sleekxmpp.ClientXMPP):
 	def __init__(self, domain, jid, password):
 		super(Register, self).__init__(jid, password)
@@ -61,10 +69,12 @@ class Zeus(sleekxmpp.ClientXMPP):
         def __init__(self, jid, password):
                 sleekxmpp.ClientXMPP.__init__(self, jid, password)
 		self.minions = []
-		self.porra = []
+		self.jid_minions = []
 		self.chat_minions = 'minions'
                 self.add_event_handler("session_start", self.start)
                 self.add_event_handler("message", self.message)
+
+		register_stanza_plugin(Iq, Containers)
 
         def start(self, event):
                 self.send_presence()
@@ -141,7 +151,7 @@ class Zeus(sleekxmpp.ClientXMPP):
                         elif option == "create_room":
                                 self.create_room(msg)
 			elif option == "teste_iq":
-			  self.teste_iq()
+			  #self.teste_iq()
                         else:
                                 print(option)
                                 self.send_message(mto=msg['from'],
@@ -161,35 +171,20 @@ class Zeus(sleekxmpp.ClientXMPP):
                                 mhtml=custom_msg['html'],
                                 mtype='chat')
 
-	def teste_iq(self):
-	  teste = self.Iq()
-
-	  query = ET.Element('{custom-xep}query')
-	  teste['type'] = 'get'
-	  teste['id'] = 'containers'
-	  teste['to'] = self.porra[0]
-	  teste['from'] = self.boundjid
-	  teste['query'] = 'containers'
-
-	  msg = self.Message()
-	  msg['type'] = 'headline'
-	  msg['to'] = 'minion@localhost'
-	  msg['from'] = self.boundjid
-	  msg['body'] = 'custom-xep'
-
-	  #query.append(msg)
-	  #teste.append(msg)
-
-	  print(teste)
+	def get_number_containers(self, to):
+	  request_iq = self.Iq()
+	  request_iq['type'] = 'get'
+	  request_iq['id'] = 'containers'
+	  #request_iq['to'] = self.porra[0]
+	  request_iq['to'] = to
+	  request_iq['from'] = self.boundjid
+	  request_iq['query'] = 'jabber:iq:containers'
 
 	  try:
-	    print(teste.send(now=True))
-          except IqError as e:
-	    print(e.iq)
-	    logging.error("Could not register account: %s" %
-	      e.iq['error']['text'])
-
-	  #self.send(msg)
+	    response = request_iq.send(now=True)
+	    return response['containers']['result']
+	  except Exception as e:
+	    raise Exception(e)
 
 	def deploy(self, msg):
 	  values_etcd = {'pods': 1}
@@ -219,9 +214,13 @@ class Zeus(sleekxmpp.ClientXMPP):
 	    if "--pods" in value:
 	      pods = int(value.replace("--pods=", "").strip())
 	      values_etcd['pods'] = pods
-	 
-	  values_etcd['port_src'] = '10000'
-	  values_etcd['port_dst'] = '8081'
+	    if "--port" in value:
+	      port = value.replace("--port=", "").strip()
+	      values_etcd['port_dst'] = port
+	  
+	  password = crypt.encrypt_data('123456', 'id_rsa.pub')
+
+	  values_etcd['password'] = password
 	  values_etcd['image'] = 'minion'
 
 	  etcd_conn = Etcd('127.0.0.1', 2379)
@@ -232,18 +231,19 @@ class Zeus(sleekxmpp.ClientXMPP):
 	  except Exception as e:
 	    raise Exception(e)
 
-	  #_create_room(self, hostname)
+	  _create_room(self, hostname)
 
-	  for number in range(pods):
-	    user = hostname + '-' + str(number)
-	    #create_user = Register(self.boundjid.domain, user + "@" + self.boundjid.domain, '123456')
-	    #create.run()
+	  if len(self.jid_minions) == 1:
+	    for number in range(pods):
+	      user = hostname + '-' + str(number)
+	      create_user = Register(self.boundjid.domain, user + "@" + self.boundjid.domain, '123456')
+	      create.run()
 
-	    msg = 'deploy ' + hostname + ' ' + endpoint
-	    self.send_message(mto=self.minions[0] + '@' + self.boundjid.domain,
-			      mbody=msg,
-			      mtype='chat')
-	    print(msg)
+	      msg = 'deploy ' + hostname + ' ' + endpoint
+	      self.send_message(mto=self.minions[0] + '@' + self.boundjid.domain,
+				mbody=msg,
+				mtype='chat')
+	      print(msg)
 	  
         def register(self, msg):
                 args = msg['body'].split()
@@ -302,7 +302,7 @@ class Zeus(sleekxmpp.ClientXMPP):
 		if presence['muc']['nick'] != self.nick:
 			if presence['from'].bare.split('@')[0] == self.chat_minions:
 				self.minions.append(presence['muc']['nick'])
-				self.porra.append(presence['muc']['jid'])
+				self.jid_minions.append(presence['muc']['jid'])
 
 			self.send_message(mto=presence['from'].bare,
 					  mbody="Ola Trouxa, %s %s" % (presence['muc']['role'], presence['muc']['nick']),

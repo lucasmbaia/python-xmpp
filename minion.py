@@ -20,6 +20,7 @@ from sleekxmpp.xmlstream import ET, StanzaBase, register_stanza_plugin
 from sleekxmpp.plugins.xep_0077.stanza import Register
 from sleekxmpp.plugins.base import base_plugin
 from sleekxmpp.xmlstream.matcher.stanzapath import StanzaPath
+from sleekxmpp.xmlstream.matcher.xmlmask import MatchXMLMask
 from sleekxmpp import Iq
 from etcdf import Etcd
 
@@ -29,6 +30,13 @@ if sys.version_info < (3, 0):
 else:
         raw_input = input
 
+class Containers(ElementBase):
+  namespace = 'jabber:iq:containers'
+  name = 'query'
+  plugin_attrib = 'containers'
+  interfaces = set(('total', 'result'))
+  sub_interfaces = interfaces
+  form_fields = set(('total', 'result'))
 
 class Minion(sleekxmpp.ClientXMPP):
         def __init__(self, jid, password):
@@ -38,45 +46,13 @@ class Minion(sleekxmpp.ClientXMPP):
                 self.add_event_handler("session_start", self.start)
                 self.add_event_handler("message", self.message)
 
-		#self.registerHandler(
-		#    Callback('Total Containers',
-		#	      StanzaPath('iq@type=get/custom_xep'),
-		#	      self._handler_total_containers))
-
-		#self.registerHandler(
-		#    Callback('Total Containers 2',
-		#	      StanzaPath('iq/custom_xep'),
-		#	      self._handler_total_containers))
-
-		#self.registerHandler(
-		#    Callback('Total Containers 3',
-		#	      StanzaPath('custom_xep'),
-		#	      self._handler_total_containers))
+		register_stanza_plugin(Iq, Containers)
 
 		self.registerHandler(
-		    Callback('Total Containers 4',
-			      StanzaPath('iq'),
+		    Callback('Total Containers',
+			      MatchXPath('{%s}iq/{jabber:iq:containers}query' % self.default_ns),
 			      self._handler_total_containers))
-
-		self.registerHandler(
-		    Callback('Total Containers 5',
-			      MatchXPath('{%s}iq' % self.default_ns),
-			      self._handler_total_containers))
-		#self.registerHandler(
-		#    Callback('Total Containers 5',
-		#	      MatchXPath('{test}/minion'),
-		#	      self._handler_total_containers))
-
-		#self.registerHandler(
-		#    Callback('Total Containers 6',
-		#	      MatchXPath('{test}'),
-		#	      self._handler_total_containers))
-
-		#self.registerHandler(
-		#    Callback('Total Containers 6',
-		#	      MatchXPath('{containers}'),
-		#	      self._handler_total_containers))
-
+		
         def start(self, event):
                 self.send_presence()
                 self.get_roster()
@@ -85,15 +61,15 @@ class Minion(sleekxmpp.ClientXMPP):
 		self.room = 'minions@conference.localhost'
 		self.nick = self.boundjid.user
 
-		rooms = self.plugin['xep_0030'].get_items(jid='conference.localhost')
+		#rooms = self.plugin['xep_0030'].get_items(jid='conference.localhost')
 
-		for room in rooms['disco_items']:
-			if room['jid'] != self.room:
-				self.plugin['xep_0045'].joinMUC(room['jid'],
-								self.nick)
+		#for room in rooms['disco_items']:
+		#	if room['jid'] != self.room:
+		#		self.plugin['xep_0045'].joinMUC(room['jid'],
+		#						self.nick)
 
-				self.add_event_handler("muc::%s::got_online" % room['jid'], self.muc_online)
-                        	logging.info("Chat room %s success!" % room['jid'])
+		#		self.add_event_handler("muc::%s::got_online" % room['jid'], self.muc_online)
+                #        	logging.info("Chat room %s success!" % room['jid'])
 
 		try:
 			room_exist = self.plugin['xep_0030'].get_info(jid=self.room)
@@ -159,9 +135,48 @@ class Minion(sleekxmpp.ClientXMPP):
 			print(msg['body'])
 
 	def _handler_total_containers(self, iq):
-	  print(self.default_ns)
-	  print("PORRA")
-	  print(iq)
+	  command = ['docker', 'ps']
+	  count = -1
+
+	  response_iq = self.Iq()
+	  response_iq['id'] = 'containers'
+	  response_iq['to'] = iq['from']
+	  response_iq['from'] = self.boundjid
+
+	  try:
+	    response = self.exec_command(command).split('\n')
+	    
+	    for infos in response:
+	      if len(infos.strip()) > 0:
+		count += 1
+
+	    query = ET.Element('{jabber:iq:containers}query')
+	    
+	    result = ET.Element('result')
+	    result.text = unicode(count)
+
+	    query.append(result)
+	    response_iq['type'] = 'result'
+	    response_iq.append(query)
+	  except Exception as e:
+	    response_iq['query'] = 'jabber:iq:containers'
+	    response_iq['type'] = 'error'
+	    response_iq['error'] = 'cancel'
+	    response_iq['error']['text'] = unicode(e)
+	 
+	  response_iq.send(now=True)
+
+	def exec_command(self, command):
+	  try:
+	    process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+	    (out, err) = process.communicate()
+
+	    if out:
+	      return out
+	    if err:
+	      raise Exception(err.strip())
+	  except OSError as e:
+	    raise Exception(e)
 
 	def list_ports(self):
 	  command = ['docker', 'ps', '--format', '"{{.Ports}}"']
@@ -216,7 +231,7 @@ class Minion(sleekxmpp.ClientXMPP):
 	    raise Exception(e)
 
 	  try:
-	    command = self.docker_command(hostname, port_host, values)
+	    command = self.docker_command(hostname, endpoint, port_host, values)
 	  except Exception as e:
 	    raise Exception(e)
 
@@ -226,17 +241,27 @@ class Minion(sleekxmpp.ClientXMPP):
 	    (out, err) = docker_process.communicate()
 
 	    if out:
-	      #print(docker_process.returncode)
 	      return out
 	    if err:
-	      #print(docker_process.returncode)
 	      raise Exception(err.strip())
 
 	  except OSError as e:
 	    raise Exception(e)
 	
-	def docker_command(self, hostname, port_host, values):
+	def docker_command(self, hostname, endpoint, port_host, values):
 	  command = ['docker', 'run']
+
+	  command.append('--env')
+	  command.append('jid=' + hostname + '@localhost')
+	  command.append('--env')
+	  command.append('etcd_endpoint=' + endpoint)
+	  command.append('--env')
+	  command.append('xmpp_url=172.16.95.111')
+
+	  if 'args' in values:
+	    for x in values['args']:
+	      command.append('--env')
+	      command.append(x + '=' + values['args'][x])
 
 	  if 'port_dst' in values:
 	    command.append('-p')
