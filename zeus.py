@@ -35,13 +35,13 @@ class Containers(ElementBase):
   sub_interfaces = interfaces
   form_fields = set(('total', 'result'))
 
-#class Docker(ElementBase):
-#	namespace = 'jabber:iq:docker'
-#	name = 'query'
-#	plugin_attrib = 'docker'
-#	interfaces = set(('containers', 'deploy', 'result'))
-#	sub_interfaces = interfaces
-#	form_fields = set(('containers', 'deploy', 'result'))
+class DockerLocal(ElementBase):
+	namespace = 'jabber:iq:docker'
+	name = 'query'
+	plugin_attrib = 'docker'
+	interfaces = set(('containers', 'deploy', 'result'))
+	sub_interfaces = interfaces
+	form_fields = set(('containers', 'deploy', 'result'))
 
 class Register(sleekxmpp.ClientXMPP):
 	def __init__(self, domain, jid, password):
@@ -89,7 +89,7 @@ class Zeus(sleekxmpp.ClientXMPP):
 
 		print(self.default_ns)
 		register_stanza_plugin(Iq, Containers)
-		#register_stanza_plugin(Iq, Docker)
+		register_stanza_plugin(Iq, DockerLocal)
 
 	def start(self, event):
 		self.send_presence()
@@ -183,19 +183,13 @@ class Zeus(sleekxmpp.ClientXMPP):
                       mtype='chat')
 
 	def get_number_containers(self, to):
-	  request_iq = self.Iq()
-	  request_iq['type'] = 'get'
-	  request_iq['id'] = 'containers'
-	  #request_iq['to'] = self.porra[0]
-	  request_iq['to'] = to
-	  request_iq['from'] = self.boundjid
-	  request_iq['query'] = 'jabber:iq:containers'
-
-	  try:
-	    response = request_iq.send(now=True)
-	    return response['containers']['result']
-	  except Exception as e:
-	    raise Exception(e)
+		try:
+			response = self.plugin['docker'].request_total_pods(ito=to, ifrom=self.boundjid)
+			return response['docker']['total']
+		except IqError as e:
+			raise Exception(e.iq['error']['text'])
+		except IqTimeout as t:
+			raise Exception(t)
 
 	def deploy(self, msg):
 		values_etcd = {'pods': 1}
@@ -257,10 +251,15 @@ class Zeus(sleekxmpp.ClientXMPP):
 			create_user = Register(self.boundjid.domain, user + "@" + self.boundjid.domain, '123456')
 			create_user.run()
 
-			msg = 'deploy ' + hostname + ' ' + endpoint + ' ' + user
-			self.send_message(mto=self.minions[0] + '@' + self.boundjid.domain,
-			mbody=msg,
-			mtype='chat')
+			self.plugin['docker'].request_first_deploy(ito=self.jid_minions[0],
+																								ifrom=self.boundjid,
+																								name=hostname,
+																								key=endpoint,
+																								user=user)
+			#msg = 'deploy ' + hostname + ' ' + endpoint + ' ' + user
+			#self.send_message(mto=self.minions[0] + '@' + self.boundjid.domain,
+			#mbody=msg,
+			#mtype='chat')
 			print(msg)
 	  
 	def register(self, msg):
@@ -319,7 +318,12 @@ class Zeus(sleekxmpp.ClientXMPP):
 					self.minions.append(presence['muc']['nick'])
 					self.jid_minions.append(presence['muc']['jid'])
 
-					self.plugin['docker'].request_get_name_pods(ito=self.boundjid, ifrom=self.boundjid)
+					try:
+						response = self.plugin['docker'].request_get_name_pods(ito=presence['muc']['jid'], ifrom=self.boundjid)
+						self.minions_pods = response['docker']['name'].split(',')
+						logging.info("Pods in %s: %s" % (presence['muc']['jid'], self.minions_pods))
+					except IqError as e:
+						logging.error("Could not get names of containers: %s" % e.iq['error']['text'])
 					#request_iq = self.Iq()
 					#request_iq['type'] = 'get'
 					#request_iq['id'] = 'containers'

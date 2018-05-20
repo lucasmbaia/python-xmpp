@@ -8,6 +8,7 @@ from sleekxmpp.plugins.docker import stanza, Docker
 from sleekxmpp.xmlstream.handler.callback import Callback
 from sleekxmpp.xmlstream.matcher.xpath import MatchXPath
 from sleekxmpp.xmlstream.stanzabase import ElementBase, ET, JID
+from sleekxmpp.exceptions import IqError, IqTimeout
 
 class DOCKER(BasePlugin):
 	name = 'docker'
@@ -18,45 +19,99 @@ class DOCKER(BasePlugin):
 	def plugin_init(self):
 		self.xep = 'docker'
 
-		print(self.xmpp.default_ns)
 		self.xmpp.registerHandler(
-			Callback('Name of Pods',
-								MatchXPath('{%s}iq/{jabber:iq:pods:name}query' % self.xmpp.default_ns),
+			Callback('Docker',
+								MatchXPath('{%s}iq/{jabber:iq:docker}query' % self.xmpp.default_ns),
 								self._handle_name_of_pods))
 
 		register_stanza_plugin(Iq, Docker)
 
 	def request_get_name_pods(self, ito=None, ifrom=None):
-		print(ito, ifrom)
 		iq = self.xmpp.Iq()
+		iq['id'] = 'name-pods'
 		iq['type'] = 'get'
 		iq['to'] = ito
 		iq['from'] = ifrom
-		iq['query'] = 'jabber:iq:pods:name'
+		iq['query'] = 'jabber:iq:docker'
 
 		return iq.send(now=True)
 
-	def response_get_name_pods(self, ito=None, ifrom=None, sucess=None, response=None, error=None):
+	def response_get_name_pods(self, ito=None, ifrom=None, success=None, response=None, error=None):
 		iq = self.xmpp.Iq()
+		iq['id'] = 'name-pods'
 		iq['to'] = ito
 		iq['from'] = ifrom
 
-		if sucess:
-			query = ET.Element('{jabber:iq:pods:name}query')
-			result = ET.Element('pods')
+		if success:
+			query = ET.Element('{jabber:iq:docker}query')
+			result = ET.Element('name')
 			result.text = response
 			query.append(result)
 
 			iq['type'] = 'result'
 			iq.append(query)
 		else:
-			iq['query'] = 'jabber:iq:pods:name'
+			iq['query'] = 'jabber:iq:docker'
 			iq['type'] = 'error'
 			iq['error'] = 'cancel'
 			iq['error']['text'] = unicode(error)
 			
 		iq.send(now=True)
 
+	def request_total_pods(self, ito=None, ifrom=None):
+		iq = self.xmpp.Iq()
+ 		iq['id'] = 'total-pods'
+		iq['type'] = 'get'
+		iq['to'] = ito
+		iq['from'] = ifrom
+		iq['query'] = 'jabber:iq:docker'
+
+		return iq.send(now=True)
+
+	def response_total_pods(self, ito=None, ifrom=None, success=None, response=None, error=None):
+		iq = self.xmpp.Iq()
+		iq['id'] = 'total-pods'
+		iq['to'] = ito
+		iq['from'] = ifrom
+
+		if success:
+			query = ET.Element('{jabber:iq:docker}query')
+			result = ET.Element('total')
+			result.text = response
+			query.append(result)
+
+			iq['type'] = 'result'
+			iq.append(query)
+		else:
+			iq['query'] = 'jabber:iq:docker'
+			iq['type'] = 'error'
+			iq['error'] = 'cancel'
+			iq['error']['text'] = unicode(error)
+			
+		iq.send(now=True)
+
+	def request_first_deploy(self, ito=None, ifrom=None, name=None, key=None, user=None):
+		iq = self.xmpp.Iq()
+		iq['id'] = 'first-deploy'
+		iq['type'] = 'set'
+		iq['to'] = ito
+		iq['from'] = ifrom
+		iq['query'] = 'jabber:iq:docker'
+
+		query = ET.Element('{jabber:iq:docker}query')
+		req_name = ET.Element('name')
+		req_name.text = name
+		req_key = ET.Element('key')
+		req_key.text = key
+		req_user = ET.Element('user')
+		req_user.text = user
+
+		query.append(req_name)
+		query.append(req_key)
+		query.append(req_user)
+
+		iq.append(query)
+		return iq.send(now=True)
+ 
 	def _handle_name_of_pods(self, iq):
-		print("CARALHO")
 		self.xmpp.event('name_pods', iq)
