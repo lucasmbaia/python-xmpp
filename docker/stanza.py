@@ -6,8 +6,8 @@ class Docker(ElementBase):
 	namespace = 'jabber:iq:docker'
 	name = 'query'
 	plugin_attrib = 'docker'
-	interfaces = set(('pods', 'total', 'names',
+	interfaces = set(('name', 'total', 'action',
 										'deploy', 'name', 'key', 'user'))
 	sub_interfaces = interfaces
-	form_fields = set(('pods', 'total', 'names',
+	form_fields = set(('name', 'total', 'action',
 										'deploy', 'name', 'key', 'user'))

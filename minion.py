@@ -23,6 +23,8 @@ from sleekxmpp.xmlstream.matcher.stanzapath import StanzaPath
 from sleekxmpp.xmlstream.matcher.xmlmask import MatchXMLMask
 from sleekxmpp import Iq
 from etcdf import Etcd
+from sleekxmpp.plugins.docker.stanza import Docker
+from sleekxmpp.plugins.docker.register import DOCKER
 
 if sys.version_info < (3, 0):
 	reload(sys)
@@ -38,6 +40,14 @@ class Containers(ElementBase):
   sub_interfaces = interfaces
   form_fields = set(('total', 'result'))
 
+class DockerLocal(ElementBase):
+	namespace = 'jabber:iq:docker'
+	name = 'query'
+	plugin_attrib = 'docker'
+	interfaces = set(('containers', 'deploy', 'result'))
+	sub_interfaces = interfaces
+	form_fields = set(('containers', 'deploy', 'result'))
+	
 class Minion(sleekxmpp.ClientXMPP):
 	def __init__(self, jid, password):
 		sleekxmpp.ClientXMPP.__init__(self, jid, password)
@@ -45,14 +55,26 @@ class Minion(sleekxmpp.ClientXMPP):
 		self.range_ports = range(10000, 10100)
 		self.add_event_handler("session_start", self.start)
 		self.add_event_handler("message", self.message)
+		self.add_event_handler("name_pods", self._handler_name_pods)
 
 		register_stanza_plugin(Iq, Containers)
+		register_stanza_plugin(Iq, DockerLocal)
 
-		self.registerHandler(
-		    Callback('Total Containers',
-									MatchXPath('{%s}iq/{jabber:iq:containers}query' % self.default_ns),
-			      			self._handler_total_containers))
+		#self.registerHandler(
+		#    Callback('Total Containers',
+		#							MatchXPath('{%s}iq/{jabber:iq:containers}query' % self.default_ns),
+		#	      			self._handler_total_containers))
 		
+		#self.registerHandler(
+		#    Callback('Docker',
+		#							MatchXPath('{%s}iq/{jabber:iq:docker}query' % self.default_ns),
+		#	      			self._handler_docker))
+
+		#self.registerHandler(
+		#    Callback('Docker',
+		#							MatchXPath('{%s}iq/{jabber:iq:pods:name}query' % self.default_ns),
+		#      				self._handler_name_pods))
+
 	def start(self, event):
 		self.send_presence()
 		self.get_roster()
@@ -113,37 +135,104 @@ class Minion(sleekxmpp.ClientXMPP):
 		if msg['type'] in ('groupchat', 'normal'):
 			print(msg['body'])
 
-	def _handler_total_containers(self, iq):
-	  command = ['docker', 'ps']
-	  count = -1
+	def _handler_name_pods(self, iq):
+		if iq['id'] == 'name-pods':
+			try:
+				names = self._handler_name_containers()
+				self.plugin['docker'].response_get_name_pods(ito=iq['from'],
+																										ifrom=self.boundjid,
+																										success=True,
+																										response=','.join(str(s) for s in names))
+			except Exception as e:
+				self.plugin['docker'].response_get_name_pods(ito=iq['from'],
+																										ifrom=self.boundjid,
+																										success=False,
+																										error=unicode(e))
 
-	  response_iq = self.Iq()
-	  response_iq['id'] = 'containers'
-	  response_iq['to'] = iq['from']
-	  response_iq['from'] = self.boundjid
+		if iq['id'] == 'total-pods':
+			try:
+				total = self._handler_name_containers()
+				self.plugin['docker'].response_total_pods(ito=iq['from'],
+																									ifrom=self.boundjid,
+																									success=True,
+																									response=total)
+			except Exception as e:
+				self.plugin['docker'].response_total_pods(ito=iq['from'],
+																									ifrom=self.boundjid,
+																									success=False,
+																									response=unicode(e))
 
-	  try:
-	    response = self.exec_command(command).split('\n')
+		if iq['id'] == 'first-deploy':
+			print(iq['docker']['name'])
+			print(iq['docker']['key'])
+			print(iq['docker']['user'])
+
+	def _handler_docker(self, iq):
+		response_iq = self.Iq()
+		response_iq['id'] = 'containers'
+		response_iq['to'] = iq['from']
+		response_iq['from'] = self.boundjid
+
+		if iq['id'] == 'containers':
+			try:
+				names = self._handler_name_containers()
+				query = ET.Element('{jabber:iq:docker}query')
+				result = ET.Element('containers')
+				result.text = ','.join(str(s) for s in names)
+				query.append(result)
+
+				response_iq['type'] = 'result'
+				response_iq.append(query)
+			except Exception as e:
+				response_iq['query'] = 'jabber:iq:docker'
+				response_iq['type'] = 'error'
+				response_iq['error'] = 'cancel'
+				response_iq['error']['text'] = unicode(e)
+
+		response_iq.send(now=True)
+	
+	def _handler_name_containers(self):
+		command = ['docker', 'ps', '--format', '"{{.Names}}"']
+		
+		try:
+			response = self.exec_command(command).split('\n')
+			return response[:1]
+		except Exception as e:
+			raise Exception(e)
+				
+	def _handler_total_containers(self):
+		command = ['docker', 'ps']
+		count = -1
+
+	  #response_iq = self.Iq()
+	  #response_iq['id'] = 'containers'
+	  #response_iq['to'] = iq['from']
+	  #response_iq['from'] = self.boundjid
+
+		try:
+			response = self.exec_command(command).split('\n')
 	    
-	    for infos in response:
-	      if len(infos.strip()) > 0:
+			for infos in response:
+				if len(infos.strip()) > 0:
 					count += 1
 
-	    query = ET.Element('{jabber:iq:containers}query')
+			return count
+	    #query = ET.Element('{jabber:iq:containers}query')
 	    
-	    result = ET.Element('result')
-	    result.text = unicode(count)
+	    #result = ET.Element('result')
+	    #result.text = unicode(count)
 
-	    query.append(result)
-	    response_iq['type'] = 'result'
-	    response_iq.append(query)
-	  except Exception as e:
-	    response_iq['query'] = 'jabber:iq:containers'
-	    response_iq['type'] = 'error'
-	    response_iq['error'] = 'cancel'
-	    response_iq['error']['text'] = unicode(e)
+	    #query.append(result)
+	    #response_iq['type'] = 'result'
+	    #response_iq.append(query)
+		except Exception as e:
+			raise Exception(e)
+	    #response_iq['query'] = 'jabber:iq:containers'
+	    #response_iq['type'] = 'error'
+	    #response_iq['error'] = 'cancel'
+	    #response_iq['error']['text'] = unicode(e)
 	 
-	  response_iq.send(now=True)
+	  #response_iq.send(now=True)
 
 	def exec_command(self, command):
 	  try:
@@ -183,55 +272,58 @@ class Minion(sleekxmpp.ClientXMPP):
 	  return ports
 
 	def deploy(self, msg):
-	  args = msg['body'].split()
-	  hostname = args[1]
-	  endpoint = args[2]
-	  port_host = None
+		args = msg['body'].split()
+		hostname = args[1]
+		endpoint = args[2]
+		user_container = args[3]
+		port_host = None
 
-	  etcd_conn = Etcd('192.168.204.128', 2379)
+		etcd_conn = Etcd('192.168.204.128', 2379)
 
-	  try:
-	    values = ast.literal_eval(etcd_conn.read(endpoint))
-	  except Exception as e:
-	    raise Exception(e)
+		try:
+			values = ast.literal_eval(etcd_conn.read(endpoint))
+		except Exception as e:
+			raise Exception(e)
 
-	  try:
-	    ports = self.list_ports()
+		try:
+			ports = self.list_ports()
 
-	    print(ports)
-	    for port in self.range_ports:
-	      if str(port) not in ports:
+			print(ports)
+			for port in self.range_ports:
+				if str(port) not in ports:
 					port_host = str(port)
 					break
 
-	    if port_host is None:
-	      raise Exception("Not more ports available in host")
-	  except Exception as e:
-	    raise Exception(e)
+			if port_host is None:
+				raise Exception("Not more ports available in host")
+		except Exception as e:
+			raise Exception(e)
 
-	  try:
-	    command = self.docker_command(hostname, endpoint, port_host, values)
-	  except Exception as e:
-	    raise Exception(e)
+		try:
+			command = self.docker_command(hostname, endpoint, user_container, port_host, values)
+		except Exception as e:
+			raise Exception(e)
 
-	  print(command)
-	  try:
-	    docker_process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-	    (out, err) = docker_process.communicate()
+		print(command)
+		try:
+			docker_process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+			(out, err) = docker_process.communicate()
 
-	    if out:
-	      return out
-	    if err:
-	      raise Exception(err.strip())
+			if out:
+				return out
+			if err:
+				raise Exception(err.strip())
 
-	  except OSError as e:
-	    raise Exception(e)
+		except OSError as e:
+			raise Exception(e)
 	
-	def docker_command(self, hostname, endpoint, port_host, values):
+	def docker_command(self, hostname, endpoint, user_container, port_host, values):
 	  command = ['docker', 'run']
 
 	  command.append('--env')
-	  command.append('jid=' + hostname + '@localhost')
+	  command.append('jid=' + user_container + '@localhost')
+	  command.append('--env')
+	  command.append('etcd_url=192.168.204.128')
 	  command.append('--env')
 	  command.append('etcd_endpoint=' + endpoint)
 	  command.append('--env')
@@ -304,6 +396,7 @@ if __name__ == '__main__':
 	xmpp.register_plugin('xep_0071') #
 	xmpp.register_plugin('xep_0199') # XMPP Ping
 	xmpp.register_plugin('xep_0066') # Out-of-band Data
+	xmpp.register_plugin('docker')
 
 	#test_ns = 'http://jabber.org/protocol/chatstates'
 	#xmpp['xep_0030'].add_feature(test_ns)
