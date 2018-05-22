@@ -8,6 +8,7 @@ from optparse import OptionParser
 
 import crypt
 import sleekxmpp
+import uuid
 
 from sleekxmpp.exceptions import IqError, IqTimeout
 from sleekxmpp.xmlstream.handler.callback import Callback
@@ -20,6 +21,7 @@ from sleekxmpp import Iq
 from etcdf import Etcd
 from sleekxmpp.plugins.docker.stanza import Docker
 from sleekxmpp.plugins.docker.register import DOCKER
+
 
 if sys.version_info < (3, 0):
 	reload(sys)
@@ -191,6 +193,90 @@ class Zeus(sleekxmpp.ClientXMPP):
 		except IqTimeout as t:
 			raise Exception(t)
 
+	def first_deploy(self, msg):
+		if len(self.minions) == 0:
+			raise Exception("Not have hosts to start the deploy")
+
+		try:
+			hostname, customer, pods, values_etcd = self._get_start_infos(msg['body'].split('%'))
+		except Exception as e:
+			raise Exception(e)
+
+		random = str(uuid.uuid4())
+		random = random.upper()
+		random = replace("-", "")
+		password = random[0:10]
+		values_etcd['password'] = crypt.encrypt_data(password, 'id_rsa.pub')
+
+		endpoint = '/' + customer + '/' + hostname
+	
+		try:
+			etcd_conn.write(endpoint, values_etcd)
+		except Exception as e:
+			raise Exception(e)
+
+		try:
+			self._create_room(hostname)
+		except Exception as e:
+			raise Exception(e)
+
+		if len(self.minions) == 1:
+			for number in range(pods):
+				application_name = hostname + "-" + str(number)
+				
+				create_user = Register(self.boundjid.domain, application_name + "@" + self.boundjid.domain, password)
+				create_user.run()
+
+				try:
+					self.plugin['docker'].request_first_deploy(ito=self.jid_minions[0],
+																										ifrom=self.boundjid,
+																										name=hostname,
+																										key=endpoint,
+																										user=application_name)
+				except IqError as e:
+					raise Exception(e.iq['error']['text'])
+				except IqTimeout as t:
+					raise Exception(t)
+
+	def _get_start_infos(self, values):
+		values_etcd = {'pods': 1}
+		hostname = None
+		customer = None
+		pods = 1
+
+		if "--name" not in values:
+			raise Exception("Name of application is not informed")
+
+		if "--customer" not in values:
+			raise Exception("Name of customer is not informed")
+
+		for value in values:
+			if "--cpus" in value:
+				values_etcd['cpus'] = value.replace("--cpus=", "").strip()
+			if "--memory" in value:
+				values_etcd['memory'] = value.replace("--memory=", "").strip()
+			if "--args" in value:
+				dic = {}
+				args = value.strip().replace("--args[", "").replace("]", "").strip(',')
+
+				for arg in args:
+					x = arg.split(':')
+					dic[x[0]] = x[1]
+
+				values_etcd['args'] = dic
+			if "--name" in value:
+				hostname = value.replace("--name=", "").strip()
+			if "--customer" in value:
+				customer = value.replace("--customer=", "").strip()
+			if "--pods" in value:
+				pods = int(value.replace("--pods=", "").strip())
+				values_etcd['pods'] = pods
+			if "--port" in value:
+				ports = value.strip().replace("--ports=", "").strip().split(',')
+				values_etcd['ports_dst'] = ports
+
+		return hostname, customer, pods, values_etcd
+
 	def deploy(self, msg):
 		values_etcd = {'pods': 1}
 		hostname = None
@@ -256,10 +342,6 @@ class Zeus(sleekxmpp.ClientXMPP):
 																								name=hostname,
 																								key=endpoint,
 																								user=user)
-			#msg = 'deploy ' + hostname + ' ' + endpoint + ' ' + user
-			#self.send_message(mto=self.minions[0] + '@' + self.boundjid.domain,
-			#mbody=msg,
-			#mtype='chat')
 			print(msg)
 	  
 	def register(self, msg):
