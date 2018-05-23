@@ -197,8 +197,8 @@ class Zeus(sleekxmpp.ClientXMPP):
 
     def get_number_containers(self, to):
         try:
-            response = self.plugin['docker'].request_total_pods(
-                ito=to, ifrom=self.boundjid)
+            response = self.plugin['docker'].request_total_pods(ito=to,
+								ifrom=self.boundjid)
             return response['docker']['total']
         except IqError as e:
             raise Exception(e.iq['error']['text'])
@@ -210,8 +210,7 @@ class Zeus(sleekxmpp.ClientXMPP):
             raise Exception("Not have hosts to start the deploy")
 
         try:
-            hostname, customer, pods, values_etcd = self._get_start_infos(
-                msg['body'].split('%'))
+            hostname, customer, pods, values_etcd = self._get_start_infos(msg['body'].split('%'))
         except Exception as e:
             raise Exception(e)
 
@@ -237,8 +236,7 @@ class Zeus(sleekxmpp.ClientXMPP):
             for number in range(pods):
                 application_name = hostname + "-" + str(number)
 
-                create_user = Register(
-                    self.boundjid.domain, application_name + "@" + self.boundjid.domain, password)
+                create_user = Register(self.boundjid.domain, application_name + "@" + self.boundjid.domain, password)
                 create_user.run()
 
                 try:
@@ -441,7 +439,7 @@ class Zeus(sleekxmpp.ClientXMPP):
 
     def create_room(self, msg):
         args = msg['body'].split()
-        self._create_room(args[1])
+        _create_room(self, args[1])
 
     def _create_room(self, name):
         self.room = name + '@conference.localhost'
@@ -573,7 +571,7 @@ if __name__ == '__main__':
 
     #xmpp['xep_0077'].force_registration = True
 
-    if xmpp.connect(address=('172.16.95.111', 5222)):
+    if xmpp.connect(address=('192.168.204.131', 5222)):
         xmpp.process(block=True)
         print("Done")
     else:
