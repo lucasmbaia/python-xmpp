@@ -63,7 +63,8 @@ class Register(sleekxmpp.ClientXMPP):
         self.disconnect(wait=True)
 
     def run(self):
-        self.connect(address=('172.16.95.111', 5222))
+        #self.connect(address=('172.16.95.111', 5222))
+        self.connect(address=('192.168.204.131', 5222))
         self.process(threaded=True)
 
     def register(self, iq):
@@ -91,7 +92,6 @@ class Zeus(sleekxmpp.ClientXMPP):
         self.chat_minions = 'minions'
         self.add_event_handler("session_start", self.start)
         self.add_event_handler("message", self.message)
-        self.add_event_handler("name_pods", self.caralho)
 
         register_stanza_plugin(Iq, Containers)
         register_stanza_plugin(Iq, DockerLocal)
@@ -413,12 +413,7 @@ class Zeus(sleekxmpp.ClientXMPP):
 
         self._create_room(hostname)
 
-        # if len(self.jid_minions) == 1:
-        print("VERME")
-
         for number in range(pods):
-            print("TOMA NO CU CARALHO")
-            print(self.jid_minions[0])
             user = hostname + '-' + str(number)
             create_user = Register(self.boundjid.domain,
                                    user + "@" + self.boundjid.domain, '123456')
@@ -502,27 +497,11 @@ class Zeus(sleekxmpp.ClientXMPP):
                     except IqError as e:
                         logging.error(
                             "Could not get names of containers: %s" % e.iq['error']['text'])
-                    #request_iq = self.Iq()
-                    #request_iq['type'] = 'get'
-                    #request_iq['id'] = 'containers'
-                    #request_iq['to'] = presence['muc']['jid']
-                    #request_iq['from'] = self.boundjid
-                    #request_iq['query'] = 'jabber:iq:docker'
-
-                    # try:
-                    #	response = request_iq.send(now=True)
-                    #	self.minions_pods = response['docker']['containers'].split(',')
-                    #	logging.info("Pods in %s: %s" % (presence['muc']['jid'], self.minions_pods))
-                    # except IqError as e:
-                    #	logging.error("Could not get names of containers: %s" % e.iq['error']['text'])
 
                 self.send_message(mto=presence['from'].bare,
                                   mbody="Ola Trouxa, %s %s" % (
                                       presence['muc']['role'], presence['muc']['nick']),
                                   mtype='groupchat')
-
-    def caralho(self, iq):
-        print("PORRAAAA")
 
     def muc_offline(self, presence):
         if presence['muc']['nick'] != self.nick:
@@ -575,7 +554,8 @@ if __name__ == '__main__':
 
     #xmpp['xep_0077'].force_registration = True
 
-    if xmpp.connect(address=('172.16.95.111', 5222)):
+    #if xmpp.connect(address=('172.16.95.111', 5222)):
+    if xmpp.connect(address=('192.168.204.131', 5222)):
         xmpp.process(block=True)
         print("Done")
     else:
