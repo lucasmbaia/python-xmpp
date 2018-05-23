@@ -63,7 +63,7 @@ class Register(sleekxmpp.ClientXMPP):
         self.disconnect(wait=True)
 
     def run(self):
-        self.connect(address=('192.168.204.131', 5222))
+        self.connect(address=('172.16.95.111', 5222))
         self.process(threaded=True)
 
     def register(self, iq):
@@ -163,7 +163,7 @@ class Zeus(sleekxmpp.ClientXMPP):
             if option == "help":
                 self.help(msg)
             elif option == "deploy":
-                self.deploy(msg)
+                self.first_deploy(msg)
             elif option == "register":
                 try:
                     self.register(msg)
@@ -357,6 +357,8 @@ class Zeus(sleekxmpp.ClientXMPP):
             if "--port" in value:
                 ports = value.strip().replace("--ports=", "").strip().split(',')
                 values_etcd['ports_dst'] = ports
+	    if "--image" in value:
+		values_etcd['image'] = value.replace("--image=", "").strip()
 
         return hostname, customer, pods, values_etcd
 
