@@ -55,7 +55,7 @@ class Register(sleekxmpp.ClientXMPP):
         self.register_plugin('xep_0004')
         self.register_plugin('xep_0066')
         self.register_plugin('xep_0077')
-        #self.plugin['xep_0077'].force_registration = True
+        # self.plugin['xep_0077'].force_registration = True
         self.add_event_handler("session_start", self.start, threaded=True)
         self.add_event_handler("register", self.register, threaded=True)
 
@@ -63,7 +63,7 @@ class Register(sleekxmpp.ClientXMPP):
         self.disconnect(wait=True)
 
     def run(self):
-        #self.connect(address=('172.16.95.111', 5222))
+        # self.connect(address=('172.16.95.111', 5222))
         self.connect(address=('192.168.204.131', 5222))
         self.process(threaded=True)
 
@@ -217,10 +217,11 @@ class Zeus(sleekxmpp.ClientXMPP):
 
         random = str(uuid.uuid4())
         random = random.upper()
-        random = replace("-", "")
+        random = random.replace("-", "")
         password = random[0:10]
         values_etcd['password'] = crypt.encrypt_data(password, 'id_rsa.pub')
 
+        etcd_conn = Etcd('192.168.204.128', 2379)
         endpoint = '/' + customer + '/' + hostname
 
         try:
@@ -253,19 +254,20 @@ class Zeus(sleekxmpp.ClientXMPP):
                     raise Exception(t)
         else:
             minions_pods = self._pods_containers(pods)
-
+            iterator = 0
             keys = minions_pods.keys()
 
             for key in keys:
-                for number in range(pods):
-                    application_name = hostname + "-" + str(number)
+                for number in range(minions_pods[key]):
+                    application_name = hostname + "-" + str(iterator)
+                    iterator += 1
 
                     create_user = Register(
                         self.boundjid.domain, application_name + "@" + self.boundjid.domain, password)
                     create_user.run()
 
                     try:
-                        self.plugin['docker'].request_first_deploy(ito=minions_pods[key]['minion'],
+                        self.plugin['docker'].request_first_deploy(ito=key,
                                                                    ifrom=self.boundjid,
                                                                    name=hostname,
                                                                    key=endpoint,
@@ -280,24 +282,28 @@ class Zeus(sleekxmpp.ClientXMPP):
         list_pods = []
         minions_count = {}
 
-        for idx, minion in self.jid_minions:
+        for minion in self.jid_minions:
             try:
                 response = self.plugin['docker'].request_total_pods(
                     ito=minion, ifrom=self.boundjid)
-                total = int(response['docker']['total'])
-                list_pods.append(total)
 
-                if not minions_count:
-                    minions_count[idx] = {'total': total, 'minion': minion}
+                if len(response['docker']['total'].strip()) > 0:
+                    total = int(response['docker']['total'])
+                    list_pods.append(total)
                 else:
-                    for count in minions_count:
-                        if minions_count[count]['total'] == total or minions_count[count]['total'] < total:
-                            minions_count[idx] = {
-                                'total': total, 'minion': minion}
-                        else:
-                            minions_count[idx] = minions_count[count]
-                            minions_count[count] = {
-                                'total': total, 'minion': minion}
+                    list_pods.append(0)
+
+                # if not minions_count:
+                #    minions_count[idx] = {'total': total, 'minion': minion}
+                # else:
+                #    for count in minions_count:
+                #        if minions_count[count]['total'] == total or minions_count[count]['total'] < total:
+                #            minions_count[idx] = {
+                #                'total': total, 'minion': minion}
+                #        else:
+                #            minions_count[idx] = minions_count[count]
+                #            minions_count[count] = {
+                #                'total': total, 'minion': minion}
 
             except IqError as e:
                 raise Exception(e.iq['error']['text'])
@@ -316,7 +322,7 @@ class Zeus(sleekxmpp.ClientXMPP):
 
         # else:
             # if (minions_count.keys()[len(minions_count) - 1]['total'] - minions_count.keys()[0]) > pods:
-            #pods_per_minion = pods / (total_minions - 2)
+            # pods_per_minion = pods / (total_minions - 2)
 
         return minions_pods
 
@@ -326,11 +332,12 @@ class Zeus(sleekxmpp.ClientXMPP):
         customer = None
         pods = 1
 
-        if "--name" not in values:
-            raise Exception("Name of application is not informed")
+        # print(values)
+        # if "--name" not in values:
+        #    raise Exception("Name of application is not informed")
 
-        if "--customer" not in values:
-            raise Exception("Name of customer is not informed")
+        # if "--customer" not in values:
+        #    raise Exception("Name of customer is not informed")
 
         for value in values:
             if "--cpus" in value:
@@ -357,8 +364,8 @@ class Zeus(sleekxmpp.ClientXMPP):
             if "--port" in value:
                 ports = value.strip().replace("--ports=", "").strip().split(',')
                 values_etcd['ports_dst'] = ports
-	    if "--image" in value:
-		values_etcd['image'] = value.replace("--image=", "").strip()
+            if "--image" in value:
+                values_etcd['image'] = value.replace("--image=", "").strip()
 
         return hostname, customer, pods, values_etcd
 
@@ -488,12 +495,14 @@ class Zeus(sleekxmpp.ClientXMPP):
                     self.jid_minions.append(presence['muc']['jid'])
 
                     try:
-                        response = self.plugin['docker'].request_get_name_pods(
-                            ito=presence['muc']['jid'], ifrom=self.boundjid)
+                        response = self.plugin['docker'].request_get_name_pods(ito=presence['muc']['jid'],
+                                                                               ifrom=self.boundjid)
+
                         self.minions_pods = response['docker']['name'].split(
                             ',')
                         logging.info("Pods in %s: %s" %
                                      (presence['muc']['jid'], self.minions_pods))
+
                     except IqError as e:
                         logging.error(
                             "Could not get names of containers: %s" % e.iq['error']['text'])
@@ -549,12 +558,12 @@ if __name__ == '__main__':
     xmpp.register_plugin('docker')
     # xmpp.register_plugin('xep_0077') # In-band Registratio
 
-    #test_ns = 'http://jabber.org/protocol/chatstates'
+    # test_ns = 'http://jabber.org/protocol/chatstates'
     # xmpp['xep_0030'].add_feature(test_ns)
 
-    #xmpp['xep_0077'].force_registration = True
+    # xmpp['xep_0077'].force_registration = True
 
-    #if xmpp.connect(address=('172.16.95.111', 5222)):
+    # if xmpp.connect(address=('172.16.95.111', 5222)):
     if xmpp.connect(address=('192.168.204.131', 5222)):
         xmpp.process(block=True)
         print("Done")
