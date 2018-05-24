@@ -32,6 +32,7 @@ if sys.version_info < (3, 0):
 else:
     raw_input = input
 
+
 class Minion(sleekxmpp.ClientXMPP):
     def __init__(self, jid, password):
         sleekxmpp.ClientXMPP.__init__(self, jid, password)
@@ -106,21 +107,21 @@ class Minion(sleekxmpp.ClientXMPP):
 
     def _handler_docker(self, iq):
         if iq['id'] == 'name-pods':
-            try:
-                names = self._handler_name_containers()
-                self.plugin['docker'].response_get_name_pods(ito=iq['from'],
-                                                             ifrom=self.boundjid,
+			try:
+				names = self._handler_name_containers()
+				self.plugin['docker'].response_get_name_pods(ito=iq['from'],
+															ifrom=self.boundjid,
                                                              success=True,
                                                              response=','.join(str(s) for s in names))
-            except Exception as e:
-                self.plugin['docker'].response_get_name_pods(ito=iq['from'],
+			except Exception as e:
+				self.plugin['docker'].response_get_name_pods(ito=iq['from'],
                                                              ifrom=self.boundjid,
                                                              success=False,
                                                              error=unicode(e))
 
         if iq['id'] == 'total-pods':
             try:
-                total = self._handler_name_containers()
+                total = self._handler_total_containers()
                 self.plugin['docker'].response_total_pods(ito=iq['from'],
                                                           ifrom=self.boundjid,
                                                           success=True,
@@ -132,9 +133,51 @@ class Minion(sleekxmpp.ClientXMPP):
                                                           response=unicode(e))
 
         if iq['id'] == 'first-deploy':
-            print(iq['docker']['name'])
-            print(iq['docker']['key'])
-            print(iq['docker']['user'])
+			try:
+				result = self._handler_deploy(iq['docker']['name'],
+											iq['docker']['key'],
+											iq['docker']['user'])
+
+				self.plugin['docker'].response_first_deploy(ito=iq['from'],
+															ifrom=self.boundjid,
+															success=True,
+															response=result)
+			except Exception as e:
+				self.plugin['docker'].response_first_deploy(ito=iq['from'],
+															ifrom=self.boundjid,
+															success=False,
+															response=unicode(e))
+				
+            #print(iq['docker']['name'])
+            #print(iq['docker']['key'])
+            #print(iq['docker']['user'])
+
+	def _handler_deploy(self, name, key, user):
+		ports_host = None
+
+		etcd_conn = Etcd('192.168.204.128', 2379)
+
+		try:
+			values = ast.literal_eval(etcd_conn.read(key))
+		except Exception as e:
+			return Exception(e)
+
+		try:
+			command = self.docker_command(name, key, user, ports_host, values)
+		except Exception as e:
+			return Exception(e)
+
+		print(command)
+		try:
+			docker_process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+			(out, err) = docker_process.communicate()
+
+			if out:
+				return out
+			if err:
+				raise Exception(err.strip())
+		except OSError as e:
+			raise Exception(e)
 
     def _handler_name_containers(self):
         command = ['docker', 'ps', '--format', '"{{.Names}}"']
@@ -320,7 +363,7 @@ if __name__ == '__main__':
     logging.basicConfig(level=opts.loglevel,
                         format='%(levelname)-8s %(message)s')
 
-    xmpp = Minion('minion@localhost', 'totvs@123')
+    xmpp = Minion('minion-2@localhost', 'totvs@123')
     xmpp.register_plugin('xep_0030')  # Service Discovery
     xmpp.register_plugin('xep_0004')  # Data Forms
     xmpp.register_plugin('xep_0059')
@@ -332,7 +375,7 @@ if __name__ == '__main__':
     xmpp.register_plugin('xep_0066')  # Out-of-band Data
     xmpp.register_plugin('docker')
 
-    #test_ns = 'http://jabber.org/protocol/chatstates'
+    # test_ns = 'http://jabber.org/protocol/chatstates'
     # xmpp['xep_0030'].add_feature(test_ns)
 
     if xmpp.connect(address=('192.168.204.131', 5222)):

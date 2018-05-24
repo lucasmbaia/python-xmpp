@@ -145,5 +145,27 @@ class DOCKER(BasePlugin):
 		iq.append(query)
 		return iq.send(now=True)
  
+	def response_first_deploy(self, ito=None, ifrom=None, success=None, response=None, error=None):
+		iq = self.xmpp.Iq()
+		iq['id'] = 'first-deploy'
+		iq['to'] = ito
+		iq['from'] = ifrom
+
+		if success:
+			query = ET.Element('{jabber:iq:docker}query')
+			result = ET.Element('deploy')
+			result.text = response
+			query.append(result)
+
+			iq['type'] = 'result'
+			iq.append(query)
+		else:
+			iq['query'] = 'jabber:iq:docker'
+			iq['type'] = 'error'
+			iq['error'] = 'cancel'
+			iq['error']['text'] = unicode(error)
+			
+		iq.send(now=True)
+
 	def _handle_name_of_pods(self, iq):
 		self.xmpp.event('name_pods', iq)
