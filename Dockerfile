@@ -12,3 +12,4 @@ Add id_rsa /app
 WORKDIR /app
 EXPOSE 8080
 CMD ["python", "./container.py"]
+#CMD ["/app/hello_world"]
