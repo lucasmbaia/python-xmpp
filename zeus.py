@@ -55,19 +55,24 @@ class Register(sleekxmpp.ClientXMPP):
         self.register_plugin('xep_0004')
         self.register_plugin('xep_0066')
         self.register_plugin('xep_0077')
+	self.register_plugin('xep_0133')
         # self.plugin['xep_0077'].force_registration = True
         self.add_event_handler("session_start", self.start, threaded=True)
-        self.add_event_handler("register", self.register, threaded=True)
+        #self.add_event_handler("register", self.register, threaded=True)
+	self.add_event_handler("failed_auth", self.failed_auth)
 
     def start(self, event):
         self.disconnect(wait=True)
 
     def run(self):
-        # self.connect(address=('172.16.95.111', 5222))
-        self.connect(address=('192.168.204.131', 5222))
+        self.connect(address=('172.16.95.111', 5222))
+        #self.connect(address=('192.168.204.131', 5222))
         self.process(threaded=True)
 
-    def register(self, iq):
+    def failed_auth(self, event):
+	self.register()
+
+    def register(self):
         create = self.Iq()
         create['type'] = 'set'
         create['register']['username'] = self.boundjid.user
@@ -218,10 +223,12 @@ class Zeus(sleekxmpp.ClientXMPP):
         random = str(uuid.uuid4())
         random = random.upper()
         random = random.replace("-", "")
-        password = random[0:10]
+        #password = random[0:10]
+	password = '123456'
         values_etcd['password'] = crypt.encrypt_data(password, 'id_rsa.pub')
 
-        etcd_conn = Etcd('192.168.204.128', 2379)
+        #etcd_conn = Etcd('192.168.204.128', 2379)
+        etcd_conn = Etcd('172.16.95.183', 2379)
         endpoint = '/' + customer + '/' + hostname
 
         try:
@@ -243,6 +250,7 @@ class Zeus(sleekxmpp.ClientXMPP):
                 create_user.run()
 
                 try:
+		    print(self.jid_minions, self.boundjid, hostname, endpoint, application_name)
                     self.plugin['docker'].request_first_deploy(ito=self.jid_minions[0],
                                                                ifrom=self.boundjid,
                                                                name=hostname,
@@ -490,22 +498,23 @@ class Zeus(sleekxmpp.ClientXMPP):
     def muc_online(self, presence):
         if len(presence['muc']['nick'].strip()) > 0:
             if presence['muc']['nick'] != self.nick:
+		print(self.chat_minions, presence['from'].bare.split('@')[0])
                 if presence['from'].bare.split('@')[0] == self.chat_minions:
                     self.minions.append(presence['muc']['nick'])
                     self.jid_minions.append(presence['muc']['jid'])
 
-                    try:
-                        response = self.plugin['docker'].request_get_name_pods(ito=presence['muc']['jid'],
-                                                                               ifrom=self.boundjid)
+                    #try:
+                    #    response = self.plugin['docker'].request_get_name_pods(ito=presence['muc']['jid'],
+                    #                                                           ifrom=self.boundjid)
 
-                        self.minions_pods = response['docker']['name'].split(
-                            ',')
-                        logging.info("Pods in %s: %s" %
-                                     (presence['muc']['jid'], self.minions_pods))
+                    #    self.minions_pods = response['docker']['name'].split(
+                    #        ',')
+                    #    logging.info("Pods in %s: %s" %
+                    #                 (presence['muc']['jid'], self.minions_pods))
 
-                    except IqError as e:
-                        logging.error(
-                            "Could not get names of containers: %s" % e.iq['error']['text'])
+                    #except IqError as e:
+                    #    logging.error(
+                     #       "Could not get names of containers: %s" % e.iq['error']['text'])
 
                 self.send_message(mto=presence['from'].bare,
                                   mbody="Ola Trouxa, %s %s" % (
@@ -553,6 +562,8 @@ if __name__ == '__main__':
     xmpp.register_plugin('xep_0045')
     xmpp.register_plugin('xep_0085')
     xmpp.register_plugin('xep_0071')
+    xmpp.register_plugin('xep_0133')
+    xmpp.register_plugin('xep_0050')
     xmpp.register_plugin('xep_0199')  # XMPP Ping
     xmpp.register_plugin('xep_0066')  # Out-of-band Data
     xmpp.register_plugin('docker')
@@ -563,8 +574,8 @@ if __name__ == '__main__':
 
     # xmpp['xep_0077'].force_registration = True
 
-    # if xmpp.connect(address=('172.16.95.111', 5222)):
-    if xmpp.connect(address=('192.168.204.131', 5222)):
+    if xmpp.connect(address=('172.16.95.111', 5222)):
+    #if xmpp.connect(address=('192.168.204.131', 5222)):
         xmpp.process(block=True)
         print("Done")
     else:
