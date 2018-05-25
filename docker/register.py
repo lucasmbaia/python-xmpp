@@ -125,10 +125,9 @@ class DOCKER(BasePlugin):
 	def request_first_deploy(self, ito=None, ifrom=None, name=None, key=None, user=None):
 		iq = self.xmpp.Iq()
 		iq['id'] = 'first-deploy'
-		iq['type'] = 'set'
+		iq['type'] = 'get'
 		iq['to'] = ito
 		iq['from'] = ifrom
-		iq['query'] = 'jabber:iq:docker'
 
 		query = ET.Element('{jabber:iq:docker}query')
 		req_name = ET.Element('name')
@@ -143,6 +142,7 @@ class DOCKER(BasePlugin):
 		query.append(req_user)
 
 		iq.append(query)
+
 		return iq.send(now=True)
  
 	def response_first_deploy(self, ito=None, ifrom=None, success=None, response=None, error=None):
