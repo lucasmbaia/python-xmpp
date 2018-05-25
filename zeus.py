@@ -292,6 +292,7 @@ class Zeus(sleekxmpp.ClientXMPP):
 
         for minion in self.jid_minions:
             try:
+		print(minion)
                 response = self.plugin['docker'].request_total_pods(
                     ito=minion, ifrom=self.boundjid)
 

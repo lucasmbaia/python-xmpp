@@ -106,6 +106,7 @@ class Minion(sleekxmpp.ClientXMPP):
             print(msg['body'])
 
     def _handler_docker(self, iq):
+	print(iq)
         if iq['id'] == 'name-pods':
             try:
                 names = self._handler_name_containers()
@@ -122,6 +123,7 @@ class Minion(sleekxmpp.ClientXMPP):
         if iq['id'] == 'total-pods':
             try:
                 total = self._handler_total_containers()
+		print(iq['from'])
                 self.plugin['docker'].response_total_pods(ito=iq['from'],
                                                           ifrom=self.boundjid,
                                                           success=True,
@@ -190,6 +192,7 @@ class Minion(sleekxmpp.ClientXMPP):
         command = ['docker', 'ps']
         count = -1
 
+	print(command)
         try:
             response = self.exec_command(command).split('\n')
 
@@ -197,7 +200,8 @@ class Minion(sleekxmpp.ClientXMPP):
                 if len(infos.strip()) > 0:
                     count += 1
 
-            return count
+	    print(count)
+            return str(count)
         except Exception as e:
             raise Exception(e)
 
@@ -312,7 +316,7 @@ class Minion(sleekxmpp.ClientXMPP):
             command.append(port_host + ':' + values['port_dst'])
 
         command.append('--name')
-        command.append(hostname)
+        command.append(user_container)
 
         if 'cpus' in values:
             command.append('--cpus=' + values['cpus'])

@@ -66,6 +66,7 @@ class DOCKER(BasePlugin):
 		iq['from'] = ifrom
 		iq['query'] = 'jabber:iq:docker'
 
+		print(iq)
 		return iq.send(now=True)
 
 	def response_total_pods(self, ito=None, ifrom=None, success=None, response=None, error=None):
@@ -87,39 +88,8 @@ class DOCKER(BasePlugin):
 			iq['type'] = 'error'
 			iq['error'] = 'cancel'
 			iq['error']['text'] = unicode(error)
-		
-		iq.send(now=True)
-
-	def request_total_pods(self, ito=None, ifrom=None):
-		iq = self.xmpp.Iq()
- 		iq['id'] = 'total-pods'
-		iq['type'] = 'get'
-		iq['to'] = ito
-		iq['from'] = ifrom
-		iq['query'] = 'jabber:iq:docker'
-
-		return iq.send(now=True)
-
-	def response_total_pods(self, ito=None, ifrom=None, success=None, response=None, error=None):
-		iq = self.xmpp.Iq()
-		iq['id'] = 'total-pods'
-		iq['to'] = ito
-		iq['from'] = ifrom
-
-		if success:
-			query = ET.Element('{jabber:iq:docker}query')
-			result = ET.Element('total')
-			result.text = response
-			query.append(result)
-
-			iq['type'] = 'result'
-			iq.append(query)
-		else:
-			iq['query'] = 'jabber:iq:docker'
-			iq['type'] = 'error'
-			iq['error'] = 'cancel'
-			iq['error']['text'] = unicode(error)
-			
+	
+		print(iq)
 		iq.send(now=True)
 
 	def request_first_deploy(self, ito=None, ifrom=None, name=None, key=None, user=None):
