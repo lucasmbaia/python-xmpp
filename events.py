@@ -6,6 +6,9 @@ import json
 import socket
 import threading
 import time
+import logging
+
+from optparse import OptionParser
 
 class SocketThread(threading.Thread):
 	def __init__(self, docker_process=False, pod_id=None):
@@ -55,8 +58,6 @@ class SocketThread(threading.Thread):
 	def _event(self, event):
 		dic_event = json.loads(event)
 
-		#print(dic_event)
-		#print("\n\n")
 		if 'from' in dic_event:
 			if dic_event['from'] in self.pods_id:
 				self.pods_id[dic_event['from']].sendall(event)
@@ -71,6 +72,10 @@ class SocketThread(threading.Thread):
 
 	def register_pods(self, name):
 		self.pod_id = name
+
+	def unregister_pods(self, name):
+		if name in self.pods_id:
+			del self.pods_id[name]
 		
 class Channel(threading.Thread):
 	def __init__(self, docker_process=False, server_process=None, pod_id=None):
@@ -92,12 +97,26 @@ class Channel(threading.Thread):
 		self.start()
 
 	def run(self):
-		while True:
-			data = self.peer_sock.recv(1024)
-			if not data:
-				break
+		try:
+			while True:
+				data = self.peer_sock.recv(1024)
+				if not data:
+					break
 
-			self._callback(data)
+				response = self._callback(data)
+
+				if response:
+					break
+
+		finally:
+			self.server_process.channel_thread.unregister_pods(self.pod_id)
+			self.peer_sock.close()
+				#print(response)
+				#self.close()
+	
+	def close(self):
+		self.server_process.channel_thread.unregister_pods(self.pod_id)
+		self.peer_sock.close()
 
 #def events(callback):
 #	comand = ['docker', 'events', '--format', '{{json .}}']
@@ -126,7 +145,27 @@ def check_from(event):
 def pod_die(event):
 	print(event)
 
+	return True
+
 if __name__ == '__main__':
+	optp = OptionParser()
+
+	optp.add_option('-q', '--quiet', help='set logging to ERROR',
+					action='store_const', dest='loglevel',
+					const=logging.ERROR, default=logging.INFO)
+
+	optp.add_option('-d', '--debug', help='set logging to DEBUG',
+                    action='store_const', dest='loglevel',
+                    const=logging.DEBUG, default=logging.INFO)
+
+	optp.add_option('-v', '--verbose', help='set logging to COMM',
+                    action='store_const', dest='loglevel',
+                    const=5, default=logging.INFO)
+
+	opts, args = optp.parse_args()
+	logging.basicConfig(level=opts.loglevel,
+                        format='%(levelname)-8s %(message)s')
+
 	#events(container)
 	s = Channel(docker_process=True)
 
