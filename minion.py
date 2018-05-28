@@ -6,6 +6,8 @@ import logging
 import getpass
 import socket
 from optparse import OptionParser
+import threading
+import json
 
 import sleekxmpp
 import ast
@@ -23,6 +25,7 @@ from sleekxmpp.xmlstream.matcher.stanzapath import StanzaPath
 from sleekxmpp.xmlstream.matcher.xmlmask import MatchXMLMask
 from sleekxmpp import Iq
 from etcdf import Etcd
+from events import Channel
 from sleekxmpp.plugins.docker.stanza import Docker
 from sleekxmpp.plugins.docker.register import DOCKER
 
@@ -41,6 +44,7 @@ class Minion(sleekxmpp.ClientXMPP):
         self.add_event_handler("session_start", self.start)
         self.add_event_handler("message", self.message)
         self.add_event_handler("name_pods", self._handler_docker)
+	self.docker_process = Channel(docker_process=True)
 
     def start(self, event):
         self.send_presence()
@@ -106,7 +110,6 @@ class Minion(sleekxmpp.ClientXMPP):
             print(msg['body'])
 
     def _handler_docker(self, iq):
-	print(iq)
         if iq['id'] == 'name-pods':
             try:
                 names = self._handler_name_containers()
@@ -123,7 +126,6 @@ class Minion(sleekxmpp.ClientXMPP):
         if iq['id'] == 'total-pods':
             try:
                 total = self._handler_total_containers()
-		print(iq['from'])
                 self.plugin['docker'].response_total_pods(ito=iq['from'],
                                                           ifrom=self.boundjid,
                                                           success=True,
@@ -135,12 +137,19 @@ class Minion(sleekxmpp.ClientXMPP):
                                                           response=unicode(e))
 
         if iq['id'] == 'first-deploy':
+	    args = {'from': str(iq['from'])}
+
+	    check_process = Channel(server_process=self.docker_process,
+				    pod_id=iq['docker']['user'],
+				    pod_args=args)
+
+	    check_process.register(self.docker_process.public_address(), self._handler_check_deploy)
+
             try:
                 result = self._handler_deploy(iq['docker']['name'],
                                               iq['docker']['key'],
                                               iq['docker']['user'])
 
-		print(result)
                 self.plugin['docker'].response_first_deploy(ito=iq['from'],
                                                             ifrom=self.boundjid,
                                                             success=True,
@@ -173,11 +182,17 @@ class Minion(sleekxmpp.ClientXMPP):
             (out, err) = docker_process.communicate()
 
             if out:
+
                 return out
             if err:
                 raise Exception(err.strip())
         except OSError as e:
             raise Exception(e)
+
+    def _handler_check_deploy(self, event):
+        dic_event = json.loads(event)
+
+	print(dic_event)
 
     def _handler_name_containers(self):
         command = ['docker', 'ps', '--format', '"{{.Names}}"']

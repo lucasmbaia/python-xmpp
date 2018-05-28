@@ -66,7 +66,6 @@ class DOCKER(BasePlugin):
 		iq['from'] = ifrom
 		iq['query'] = 'jabber:iq:docker'
 
-		print(iq)
 		return iq.send(now=True)
 
 	def response_total_pods(self, ito=None, ifrom=None, success=None, response=None, error=None):
@@ -89,7 +88,6 @@ class DOCKER(BasePlugin):
 			iq['error'] = 'cancel'
 			iq['error']['text'] = unicode(error)
 	
-		print(iq)
 		iq.send(now=True)
 
 	def request_first_deploy(self, ito=None, ifrom=None, name=None, key=None, user=None):
