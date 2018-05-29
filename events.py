@@ -28,13 +28,16 @@ class SocketThread(threading.Thread):
             docker_thread.start()
 
     def run(self):
-        while True:
-            connection = self.sock.accept()[0]
-            if not connection:
-                break
+	try:
+	    while True:
+		connection = self.sock.accept()[0]
+		if not connection:
+		    break
 
-            if self.pod_id is not None:
-		self.pods_id[self.pod_id] = {'connection': connection, 'args': self.pod_args}
+		if self.pod_id is not None:
+		    self.pods_id[self.pod_id] = {'connection': connection, 'args': self.pod_args}
+	finally:
+	    connection.close()
 
     def _docker_events(self):
         command = ['docker', 'events', '--format', '{{json .}}']
@@ -54,8 +57,8 @@ class SocketThread(threading.Thread):
             return rc
         except OSError as e:
             return unicode(e)
-        except (KeyboardInterrupt):
-            os.killpg(os.getpgid(docker_events.pid), signal.SIGTERM)
+        #except (KeyboardInterrupt):
+            #os.killpg(os.getpgid(docker_events.pid), signal.SIGTERM)
 
     def _event(self, event):
         dic_event = json.loads(event)
@@ -84,6 +87,7 @@ class SocketThread(threading.Thread):
 
     def unregister_pods(self, name):
         if name in self.pods_id:
+	    self.pods_id[name]['connection'].close()
             del self.pods_id[name]
 
 
@@ -96,6 +100,7 @@ class Channel(threading.Thread):
 	self.pod_args = pod_args
         self.server_process = server_process
         self.daemon = True
+	self.response = None
         self.channel_thread = SocketThread(docker_process=docker_process)
 
     def public_address(self):
@@ -115,14 +120,21 @@ class Channel(threading.Thread):
                 if not data:
                     break
 
-                response = self._callback(data)
+                self.response = self._callback(data)
 
-                if response:
+                if self.response:
                     break
-
+	except Exception as e:
+            self.server_process.channel_thread.unregister_pods(self.pod_id)
+	    self.peer_sock.close()
         finally:
             self.server_process.channel_thread.unregister_pods(self.pod_id)
             self.peer_sock.close()
+    
+    def close(self):
+	self.response = True
+        self.server_process.channel_thread.unregister_pods(self.pod_id)
+        self.peer_sock.close()
 
 # def events(callback):
 #	comand = ['docker', 'events', '--format', '{{json .}}']

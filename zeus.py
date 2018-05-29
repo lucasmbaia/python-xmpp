@@ -9,6 +9,7 @@ from optparse import OptionParser
 import crypt
 import sleekxmpp
 import uuid
+import threading
 
 from sleekxmpp.exceptions import IqError, IqTimeout
 from sleekxmpp.xmlstream.handler.callback import Callback
@@ -29,63 +30,41 @@ if sys.version_info < (3, 0):
 else:
     raw_input = input
 
+#class Register(sleekxmpp.ClientXMPP):
+#    def __init__(self, domain, jid, password):
+#        super(Register, self).__init__(jid, password)
+#        self.register_plugin('xep_0030')
+#        self.register_plugin('xep_0004')
+#        self.register_plugin('xep_0066')
+#        self.register_plugin('xep_0077')
+#	self.register_plugin('xep_0133')
+#        self.add_event_handler("session_start", self.start, threaded=True)
+#	self.add_event_handler("failed_auth", self.failed_auth)
 
-class Containers(ElementBase):
-    namespace = 'jabber:iq:containers'
-    name = 'query'
-    plugin_attrib = 'containers'
-    interfaces = set(('total', 'result'))
-    sub_interfaces = interfaces
-    form_fields = set(('total', 'result'))
+#    def start(self, event):
+#        self.disconnect(wait=True)
 
+#    def run(self):
+#        self.connect(address=('172.16.95.111', 5222))
+#        self.process(threaded=True)
 
-class DockerLocal(ElementBase):
-    namespace = 'jabber:iq:docker'
-    name = 'query'
-    plugin_attrib = 'docker'
-    interfaces = set(('containers', 'deploy', 'result'))
-    sub_interfaces = interfaces
-    form_fields = set(('containers', 'deploy', 'result'))
+#    def failed_auth(self, event):
+#	self.register()
 
+#    def register(self):
+#        create = self.Iq()
+#        create['type'] = 'set'
+#        create['register']['username'] = self.boundjid.user
+#        create['register']['password'] = self.password
 
-class Register(sleekxmpp.ClientXMPP):
-    def __init__(self, domain, jid, password):
-        super(Register, self).__init__(jid, password)
-        self.register_plugin('xep_0030')
-        self.register_plugin('xep_0004')
-        self.register_plugin('xep_0066')
-        self.register_plugin('xep_0077')
-	self.register_plugin('xep_0133')
-        # self.plugin['xep_0077'].force_registration = True
-        self.add_event_handler("session_start", self.start, threaded=True)
-        #self.add_event_handler("register", self.register, threaded=True)
-	self.add_event_handler("failed_auth", self.failed_auth)
-
-    def start(self, event):
-        self.disconnect(wait=True)
-
-    def run(self):
-        self.connect(address=('172.16.95.111', 5222))
-        #self.connect(address=('192.168.204.131', 5222))
-        self.process(threaded=True)
-
-    def failed_auth(self, event):
-	self.register()
-
-    def register(self):
-        create = self.Iq()
-        create['type'] = 'set'
-        create['register']['username'] = self.boundjid.user
-        create['register']['password'] = self.password
-
-        try:
-            create.send(now=True)
-            logging.info("Account created for %s" % self.boundjid)
-        except IqError as e:
-            logging.error("Could not register account: %s" %
-                          e.iq['error']['text'])
-        except IqTimeout:
-            logging.error("No response from server.")
+#        try:
+#            create.send(now=True)
+#            logging.info("Account created for %s" % self.boundjid)
+#        except IqError as e:
+#            logging.error("Could not register account: %s" %
+#                          e.iq['error']['text'])
+#        except IqTimeout:
+#            logging.error("No response from server.")
 
 
 class Zeus(sleekxmpp.ClientXMPP):
@@ -97,9 +76,6 @@ class Zeus(sleekxmpp.ClientXMPP):
         self.chat_minions = 'minions'
         self.add_event_handler("session_start", self.start)
         self.add_event_handler("message", self.message)
-
-        register_stanza_plugin(Iq, Containers)
-        register_stanza_plugin(Iq, DockerLocal)
 
     def start(self, event):
         self.send_presence()
@@ -168,7 +144,20 @@ class Zeus(sleekxmpp.ClientXMPP):
             if option == "help":
                 self.help(msg)
             elif option == "deploy":
-                self.first_deploy(msg)
+		thread_deploy = threading.Thread(target=self.first_deploy, args=[msg])
+		thread_deploy.daemon = True
+		thread_deploy.start()
+
+		#try:
+		#    self.first_deploy(msg)
+
+		#    self.send_message(mto=msg['from'],
+		#		    mbody='Sucess Deploy',
+		#		    mtype='chat')
+		#except Exception as e:
+		#    self.send_message(mto=msg['from'],
+		#		    mbody=unicode(e),
+		#		    mtype='chat')
             elif option == "register":
                 try:
                     self.register(msg)
@@ -210,22 +199,27 @@ class Zeus(sleekxmpp.ClientXMPP):
         except IqTimeout as t:
             raise Exception(t)
 
+    def _handler_send_message(self, mto, body):
+	self.send_message(mto=mto,
+			mbody=body,
+			mtype='chat')
+
     def first_deploy(self, msg):
         if len(self.minions) == 0:
-            raise Exception("Not have hosts to start the deploy")
+	    self._handler_send_message(msg['from'], "Not have hosts to start the deploy")
 
         try:
             hostname, customer, pods, values_etcd = self._get_start_infos(
                 msg['body'].split('%'))
         except Exception as e:
-            raise Exception(e)
+	    self._handler_send_message(msg['from'], unicode(e))
 
-        random = str(uuid.uuid4())
-        random = random.upper()
-        random = random.replace("-", "")
+        #random = str(uuid.uuid4())
+        #random = random.upper()
+        #random = random.replace("-", "")
         #password = random[0:10]
-	password = '123456'
-        values_etcd['password'] = crypt.encrypt_data(password, 'id_rsa.pub')
+	#password = '123456'
+        #values_etcd['password'] = crypt.encrypt_data(password, 'id_rsa.pub')
 
         #etcd_conn = Etcd('192.168.204.128', 2379)
         etcd_conn = Etcd('172.16.95.183', 2379)
@@ -234,32 +228,20 @@ class Zeus(sleekxmpp.ClientXMPP):
         try:
             etcd_conn.write(endpoint, values_etcd)
         except Exception as e:
-            raise Exception(e)
+	    self._handler_send_message(msg['from'], unicode(e))
 
         try:
             self._create_room(hostname)
         except Exception as e:
-            raise Exception(e)
+	    self._handler_send_message(msg['from'], unicode(e))
 
         if len(self.minions) == 1:
             for number in range(pods):
                 application_name = hostname + "-" + str(number)
 
-                create_user = Register(
-                    self.boundjid.domain, application_name + "@" + self.boundjid.domain, password)
-                create_user.run()
-
-                try:
-		    print(self.jid_minions, self.boundjid, hostname, endpoint, application_name)
-                    self.plugin['docker'].request_first_deploy(ito=self.jid_minions[0],
-                                                               ifrom=self.boundjid,
-                                                               name=hostname,
-                                                               key=endpoint,
-                                                               user=application_name)
-                except IqError as e:
-                    raise Exception(e.iq['error']['text'])
-                except IqTimeout as t:
-                    raise Exception(t)
+		thread_deploy_minion = threading.Thread(target=self._requet_deploy_to_minion, args=[self.jid_minions[0], hostname, endpoint, application_name, msg['from']])
+		thread_deploy_minion.daemon = True
+		thread_deploy_minion.start()
         else:
             minions_pods = self._pods_containers(pods)
             iterator = 0
@@ -270,20 +252,23 @@ class Zeus(sleekxmpp.ClientXMPP):
                     application_name = hostname + "-" + str(iterator)
                     iterator += 1
 
-                    create_user = Register(
-                        self.boundjid.domain, application_name + "@" + self.boundjid.domain, password)
-                    create_user.run()
+		    thread_deploy_minion = threading.Thread(target=self._requet_deploy_to_minion, args=[key, hostname, endpoint, application_name, msg['from']])
+		    thread_deploy_minion.daemon = True
+		    thread_deploy_minion.start()
 
-                    try:
-                        self.plugin['docker'].request_first_deploy(ito=key,
-                                                                   ifrom=self.boundjid,
-                                                                   name=hostname,
-                                                                   key=endpoint,
-                                                                   user=application_name)
-                    except IqError as e:
-                        raise Exception(e.iq['error']['text'])
-                    except IqTimeout as t:
-                        raise Exception(t)
+    def _requet_deploy_to_minion(self, ito, hostname, endpoint, application_name, ifrom):
+	try:
+	    self.plugin['docker'].request_first_deploy(ito=ito,
+						    ifrom=self.boundjid,
+						    name=hostname,
+						    key=endpoint,
+						    user=application_name)
+
+	    self._handler_send_message(ifrom, 'sucess deploy container ' + application_name)
+	except IqError as e:
+	    self._handler_send_message(ifrom, e.iq['error']['text'])
+	except IqTimeout as t:
+	    self._handler_send_message(ifrom, unicode(t))
 
     def _pods_containers(self, pods):
         minions_pods = {}
@@ -486,6 +471,7 @@ class Zeus(sleekxmpp.ClientXMPP):
                               e.iq['error']['text'])
 
         else:
+	    print("CARALHO")
             self.plugin['xep_0045'].joinMUC(self.room,
                                             self.nick)
 

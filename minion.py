@@ -13,6 +13,7 @@ import sleekxmpp
 import ast
 import subprocess
 import os
+import Queue
 
 from sleekxmpp.exceptions import IqError, IqTimeout
 from sleekxmpp.xmlstream.handler.callback import Callback
@@ -45,6 +46,8 @@ class Minion(sleekxmpp.ClientXMPP):
         self.add_event_handler("message", self.message)
         self.add_event_handler("name_pods", self._handler_docker)
 	self.docker_process = Channel(docker_process=True)
+	self.pod_deploy_start = []
+	self.channel_connections = {}
 
     def start(self, event):
         self.send_presence()
@@ -137,28 +140,28 @@ class Minion(sleekxmpp.ClientXMPP):
                                                           response=unicode(e))
 
         if iq['id'] == 'first-deploy':
-	    args = {'from': str(iq['from'])}
+	    pod_name = iq['docker']['user']
+	    self.pod_deploy_start.append(pod_name)
 
-	    check_process = Channel(server_process=self.docker_process,
-				    pod_id=iq['docker']['user'],
+	    args = {'from': str(iq['from']), 'pod': str(pod_name)}
+
+	    self.channel_connections[pod_name] = Channel(server_process=self.docker_process,
+				    pod_id=pod_name,
 				    pod_args=args)
 
-	    check_process.register(self.docker_process.public_address(), self._handler_check_deploy)
+	    self.channel_connections[pod_name].register(self.docker_process.public_address(), self._handler_check_deploy)
 
             try:
                 result = self._handler_deploy(iq['docker']['name'],
                                               iq['docker']['key'],
                                               iq['docker']['user'])
 
-                self.plugin['docker'].response_first_deploy(ito=iq['from'],
-                                                            ifrom=self.boundjid,
-                                                            success=True,
-                                                            response=result)
             except Exception as e:
                 self.plugin['docker'].response_first_deploy(ito=iq['from'],
                                                             ifrom=self.boundjid,
                                                             success=False,
-                                                            response=unicode(e))
+                                                            error=unicode(e))
+		self.channel_connections[pod_name].close()
 
     def _handler_deploy(self, name, key, user):
         ports_host = None
@@ -191,6 +194,37 @@ class Minion(sleekxmpp.ClientXMPP):
 
     def _handler_check_deploy(self, event):
         dic_event = json.loads(event)
+	pod = None
+
+	if 'pod' in dic_event['args']:
+	    pod = dic_event['args']['pod']
+
+	def send_response(self, args, pod):
+	    if pod is not None and pod in self.pod_deploy_start:
+		self.plugin['docker'].response_first_deploy(ito=args['from'],
+                                                            ifrom=self.boundjid,
+                                                            success=True,
+                                                            response='OK')
+
+		self.pod_deploy_start.remove(pod)
+		self.channel_connections[pod].close()
+
+	if 'status' in dic_event['docker']:
+	    if 'start' in dic_event['docker']['status']:
+		response = threading.Timer(3, send_response, [self, dic_event['args'], pod])
+		response.daemon = True
+		response.start()
+
+	    if 'die' in dic_event['docker']['status']:
+		if pod is not None:
+		    if pod in self.pod_deploy_start:
+			self.pod_deploy_start.remove(pod)
+
+		    self.plugin['docker'].response_first_deploy(ito=dic_event['args']['from'],
+								ifrom=self.boundjid,
+								success=False,
+								error='Error to create ' + pod)
+		    self.channel_connections[pod].close()
 
 	print(dic_event)
 
@@ -308,7 +342,7 @@ class Minion(sleekxmpp.ClientXMPP):
             raise Exception(e)
 
     def docker_command(self, hostname, endpoint, user_container, port_host, values):
-        command = ['docker', 'run']
+        command = ['docker', 'run', '--rm']
 
         command.append('--env')
         command.append('jid=' + user_container + '@localhost')
@@ -382,7 +416,7 @@ if __name__ == '__main__':
     logging.basicConfig(level=opts.loglevel,
                         format='%(levelname)-8s %(message)s')
 
-    xmpp = Minion('minion-1@localhost', 'totvs@123')
+    xmpp = Minion('minion-2@localhost', 'totvs@123')
     xmpp.register_plugin('xep_0030')  # Service Discovery
     xmpp.register_plugin('xep_0004')  # Data Forms
     xmpp.register_plugin('xep_0059')
