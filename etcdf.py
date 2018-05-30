@@ -42,24 +42,35 @@ class Etcd:
         except etcd.EtcdKeyNotFound:
             raise Exception("Key %s not present anymore" % endpoint)
 
-    def update(self, endpoint, append_values=None, add_values=None):
+    def update(self, endpoint, replace_value):
 	if not endpoint:
-	    raize Exception("Endpoint is empty")
+	    raise Exception("Endpoint is empty")
 
+	if not endpoint:
+	    raise Exception("Values to replace is empty")
 	try:
 	    response = self.client.read(endpoint)
+	    response.value = replace_value
+	    update = self.client.update(response)
 	except Exception as e:
 	    raise Exception(e)
 
-	values = ast.literal_eval(response.value)
+    def watch(self, endpoint):
+        if not endpoint:
+            raise Exception("Endpoint is empty")
 
-	if append_values is not None:
+        try:
+            values = self.client.watch(endpoint, timeout=0)
+        except etcd.EtcdKeyNotFound:
+            raise Exception("Key %s not present anymore" % endpoint)
+
+        return values.value
 
 if __name__ == '__main__':
     p = Etcd('172.16.95.183', 2379)
 
     try:
-        p.write('/python/app1', {'string': 'test', 'number': 3})
+	p.write('/python/app1', {'app': {'ips':['10.10.1.1']}})
     except Exception as e:
         print(e)
 
@@ -69,11 +80,18 @@ if __name__ == '__main__':
         print(e)
 
     val = ast.literal_eval(val)
-    print(val)
-    val.update({'pepeca': 1})
+    val['app']['ips'].append('10.10.1.2')
+
+    try:
+	p.update('/python/app1', val)
+    except Exception as e:
+	print(e)
+    #val = ast.literal_eval(val)
+    #print(val)
+    #val.update({'pepeca': 1})
     #print(ast.literal_eval(val))
 
-    print(val)
+   # print(val)
     # try:
     #  p.delete('/python/app1')
     # except Exception as e:
