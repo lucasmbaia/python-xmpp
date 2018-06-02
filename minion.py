@@ -45,9 +45,9 @@ class Minion(sleekxmpp.ClientXMPP):
         self.add_event_handler("session_start", self.start)
         self.add_event_handler("message", self.message)
         self.add_event_handler("name_pods", self._handler_docker)
-	self.docker_process = Channel(docker_process=True)
-	self.pod_deploy_start = []
-	self.channel_connections = {}
+        self.docker_process = Channel(docker_process=True)
+        self.pod_deploy_start = []
+        self.channel_connections = {}
 
     def start(self, event):
         self.send_presence()
@@ -140,34 +140,38 @@ class Minion(sleekxmpp.ClientXMPP):
                                                           response=unicode(e))
 
         if iq['id'] == 'first-deploy':
-	    pod_name = iq['docker']['user']
-	    self.pod_deploy_start.append(pod_name)
+			pod_name = iq['docker']['user']
+			key_etcd = iq['docker']['key']
+			application_name = iq['docker']['name']
 
-	    args = {'from': str(iq['from']), 'pod': str(pod_name)}
+			self.pod_deploy_start.append(pod_name)
 
-	    self.channel_connections[pod_name] = Channel(server_process=self.docker_process,
-				    pod_id=pod_name,
-				    pod_args=args)
+			args = {'from': str(iq['from']), 'pod': str(pod_name), 'key': str(key_etcd), 'application_name': str(application_name)}
 
-	    self.channel_connections[pod_name].register(self.docker_process.public_address(), self._handler_check_deploy)
+			self.channel_connections[pod_name] = Channel(server_process=self.docker_process,
+                                                         pod_id=pod_name,
+                                                         pod_args=args)
 
-            try:
-                result = self._handler_deploy(iq['docker']['name'],
+			self.channel_connections[pod_name].register(
+                self.docker_process.public_address(), self._handler_check_deploy)
+
+			try:
+				result = self._handler_deploy(iq['docker']['name'],
                                               iq['docker']['key'],
                                               iq['docker']['user'])
 
-            except Exception as e:
-                self.plugin['docker'].response_first_deploy(ito=iq['from'],
+			except Exception as e:
+				self.plugin['docker'].response_first_deploy(ito=iq['from'],
                                                             ifrom=self.boundjid,
                                                             success=False,
                                                             error=unicode(e))
-		self.channel_connections[pod_name].close()
+				self.channel_connections[pod_name].close()
 
     def _handler_deploy(self, name, key, user):
         ports_host = None
 
         #etcd_conn = Etcd('192.168.204.128', 2379)
-        etcd_conn = Etcd('172.16.95.183', 2379)
+        etcd_conn = Etcd('192.168.204.128', 2379)
 
         try:
             values = ast.literal_eval(etcd_conn.read(key))
@@ -181,11 +185,11 @@ class Minion(sleekxmpp.ClientXMPP):
 
         print(command)
         try:
-            docker_process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            docker_process = subprocess.Popen(
+                command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
             (out, err) = docker_process.communicate()
 
             if out:
-
                 return out
             if err:
                 raise Exception(err.strip())
@@ -194,39 +198,67 @@ class Minion(sleekxmpp.ClientXMPP):
 
     def _handler_check_deploy(self, event):
         dic_event = json.loads(event)
-	pod = None
+        pod = None
 
-	if 'pod' in dic_event['args']:
-	    pod = dic_event['args']['pod']
+        if 'pod' in dic_event['args']:
+            pod = dic_event['args']['pod']
 
-	def send_response(self, args, pod):
-	    if pod is not None and pod in self.pod_deploy_start:
-		self.plugin['docker'].response_first_deploy(ito=args['from'],
+        def send_response(self, args, pod):
+			if pod is not None and pod in self.pod_deploy_start:
+				print("PORRA")
+				print(args['from'])
+				self.plugin['docker'].response_first_deploy(ito=args['from'],
                                                             ifrom=self.boundjid,
                                                             success=True,
                                                             response='OK')
 
-		self.pod_deploy_start.remove(pod)
-		self.channel_connections[pod].close()
+				self.pod_deploy_start.remove(pod)
+				self.channel_connections[pod].close()
+				self._handler_haproxy(pod, args['key'], args['application_name'])
 
-	if 'status' in dic_event['docker']:
-	    if 'start' in dic_event['docker']['status']:
-		response = threading.Timer(3, send_response, [self, dic_event['args'], pod])
-		response.daemon = True
-		response.start()
+        if 'status' in dic_event['docker']:
+            if 'start' in dic_event['docker']['status']:
+                response = threading.Timer(
+                    3, send_response, [self, dic_event['args'], pod])
+                response.daemon = True
+                response.start()
 
-	    if 'die' in dic_event['docker']['status']:
-		if pod is not None:
-		    if pod in self.pod_deploy_start:
-			self.pod_deploy_start.remove(pod)
+            if 'die' in dic_event['docker']['status']:
+                if pod is not None:
+                    if pod in self.pod_deploy_start:
+                        self.pod_deploy_start.remove(pod)
 
-		    self.plugin['docker'].response_first_deploy(ito=dic_event['args']['from'],
-								ifrom=self.boundjid,
-								success=False,
-								error='Error to create ' + pod)
-		    self.channel_connections[pod].close()
+                    self.plugin['docker'].response_first_deploy(ito=dic_event['args']['from'],
+                                                                ifrom=self.boundjid,
+                                                                success=False,
+                                                                error='Error to create ' + pod)
+                    self.channel_connections[pod].close()
 
-	print(dic_event)
+        print(dic_event)
+
+	def _handler_haproxy(self, pod, key, application_name):
+		etcd_conn = Etcd('192.168.204.128', 2379)
+		command = ['docker', 'inspect', '-f', '"{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}"', pod]
+
+		try:
+			ip_pod = self.exec_command(command)
+		except Exception as e:
+			return Exception(e)
+
+		try:
+			values = ast.literal_eval(etcd_conn.read(key))
+		except Exception as e:
+			return Exception(e)
+
+		if application_name in values:
+			values[application_name]['ips'].append(ip_pod)
+		else:
+			values[application_name] = {'ips': [ip_pod]}
+		
+		try:
+			etcd_conn.write('/haproxy', json.dumps(values))
+		except Exception as e:
+			return Exception(e)
 
     def _handler_name_containers(self):
         command = ['docker', 'ps', '--format', '"{{.Names}}"']
@@ -241,7 +273,7 @@ class Minion(sleekxmpp.ClientXMPP):
         command = ['docker', 'ps']
         count = -1
 
-	print(command)
+        print(command)
         try:
             response = self.exec_command(command).split('\n')
 
@@ -249,7 +281,7 @@ class Minion(sleekxmpp.ClientXMPP):
                 if len(infos.strip()) > 0:
                     count += 1
 
-	    print(count)
+            print(count)
             return str(count)
         except Exception as e:
             raise Exception(e)
@@ -347,12 +379,12 @@ class Minion(sleekxmpp.ClientXMPP):
         command.append('--env')
         command.append('jid=' + user_container + '@localhost')
         command.append('--env')
-        #command.append('etcd_url=192.168.204.128')
+        # command.append('etcd_url=192.168.204.128')
         command.append('etcd_url=172.16.95.183')
         command.append('--env')
         command.append('etcd_endpoint=' + endpoint)
         command.append('--env')
-        #command.append('xmpp_url=192.168.204.131')
+        # command.append('xmpp_url=192.168.204.131')
         command.append('xmpp_url=172.16.95.111')
 
         if 'args' in values:
@@ -416,7 +448,7 @@ if __name__ == '__main__':
     logging.basicConfig(level=opts.loglevel,
                         format='%(levelname)-8s %(message)s')
 
-    xmpp = Minion('minion-2@localhost', 'totvs@123')
+    xmpp = Minion('minion-1@localhost', 'totvs@123')
     xmpp.register_plugin('xep_0030')  # Service Discovery
     xmpp.register_plugin('xep_0004')  # Data Forms
     xmpp.register_plugin('xep_0059')
@@ -431,8 +463,8 @@ if __name__ == '__main__':
     # test_ns = 'http://jabber.org/protocol/chatstates'
     # xmpp['xep_0030'].add_feature(test_ns)
 
-    #if xmpp.connect(address=('192.168.204.131', 5222)):
-    if xmpp.connect(address=('172.16.95.111', 5222)):
+    if xmpp.connect(address=('192.168.204.131', 5222)):
+        # if xmpp.connect(address=('172.16.95.111', 5222)):
         xmpp.process(block=True)
         print("Done")
     else:

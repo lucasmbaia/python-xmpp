@@ -2,6 +2,8 @@
 
 import etcd
 import ast
+import json
+import time
 
 
 class Etcd:
@@ -43,49 +45,64 @@ class Etcd:
             raise Exception("Key %s not present anymore" % endpoint)
 
     def update(self, endpoint, replace_value):
-	if not endpoint:
-	    raise Exception("Endpoint is empty")
+		if not endpoint:
+			raise Exception("Endpoint is empty")
 
-	if not endpoint:
-	    raise Exception("Values to replace is empty")
-	try:
-	    response = self.client.read(endpoint)
-	    response.value = replace_value
-	    update = self.client.update(response)
-	except Exception as e:
-	    raise Exception(e)
+		if not endpoint:
+			raise Exception("Values to replace is empty")
+		try:
+			response = self.client.read(endpoint)
+			response.value = replace_value
+			self.client.update(response)
+		except Exception as e:
+			raise Exception(e)
 
-    def watch(self, endpoint):
+    def watch(self, endpoint, callback=None):
         if not endpoint:
             raise Exception("Endpoint is empty")
 
         try:
-            values = self.client.watch(endpoint, timeout=0)
+			print("CARALHO")
+			values = self.client.watch(endpoint)
+			print(values)
+			#callback(values.value)
         except etcd.EtcdKeyNotFound:
-            raise Exception("Key %s not present anymore" % endpoint)
-
-        return values.value
+			raise Exception("Key %s not present anymore" % endpoint)
 
 if __name__ == '__main__':
-    p = Etcd('172.16.95.183', 2379)
+	p = Etcd('192.168.204.128', 2379)
 
-    try:
-	p.write('/python/app1', {'app': {'ips':['10.10.1.1']}})
-    except Exception as e:
-        print(e)
+	print("TOMA NO SEU CU")
+	#d = [{"name": "app", "ips": ["10.10.1.1"], "port": 80}]
+	d = {'app': {'ips':['10.10.1.1'], 'portSRC': '80', 'portDST': '8080'}}
+	try:
+		#p.write('/python/app', {'app': {'ips':['10.10.1.1']}})
+		p.write('/python/app', json.dumps(d))
+	except Exception as e:
+		print(e)
 
-    try:
-        val = p.read('/python/app1')
-    except Exception as e:
-        print(e)
+	try:
+		val = p.read('/python/app')
+	except Exception as e:
+		print(e)
 
-    val = ast.literal_eval(val)
-    val['app']['ips'].append('10.10.1.2')
+	print(val)
+	val = ast.literal_eval(val)
 
-    try:
-	p.update('/python/app1', val)
-    except Exception as e:
-	print(e)
+	count = 0
+	while True:
+		val['app' + str(count)] = {'ips':['10.10.1.1'], 'portSRC': '80', 'portDST': '8080'}
+
+		print(json.dumps(val))
+		try:
+			p.update('/python/app', json.dumps(val))
+		except Exception as e:
+			print(e)
+
+		print("MEU OVO")
+		count += 1
+		time.sleep(1)
+	
     #val = ast.literal_eval(val)
     #print(val)
     #val.update({'pepeca': 1})

@@ -2,12 +2,13 @@
 
 from etcdf import Etcd
 
+def watch(values):
+	print(values)
 
 if __name__ == '__main__':
-    p = Etcd('172.16.95.183', 2379)
+    p = Etcd('192.168.75.128', 2379)
     
     try:
-	chups = p.watch('/python/app1')
-	print(chups)
+		chups = p.watch('/python/app')
     except Exception as e:
-	print(e)
+		print(e)

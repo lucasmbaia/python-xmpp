@@ -1,0 +1,6 @@
+package: github.com/lucasmbaia/etcd
+import:
+- package: github.com/coreos/etcd/clientv3
+  subpackages:
+  - clientv3
+- package: golang.org/x/net/context

@@ -222,7 +222,7 @@ class Zeus(sleekxmpp.ClientXMPP):
         #values_etcd['password'] = crypt.encrypt_data(password, 'id_rsa.pub')
 
         #etcd_conn = Etcd('192.168.204.128', 2379)
-        etcd_conn = Etcd('172.16.95.183', 2379)
+        etcd_conn = Etcd('192.168.204.128', 2379)
         endpoint = '/' + customer + '/' + hostname
 
         try:
@@ -561,7 +561,7 @@ if __name__ == '__main__':
 
     # xmpp['xep_0077'].force_registration = True
 
-    if xmpp.connect(address=('172.16.95.111', 5222)):
+    if xmpp.connect(address=('192.168.204.131', 5222)):
     #if xmpp.connect(address=('192.168.204.131', 5222)):
         xmpp.process(block=True)
         print("Done")

@@ -1,0 +1,13 @@
+hash: 9e665e04a81f3ce394a213f325a290ccbcac97e4e70fd9c7908c86792380c904
+updated: 2018-05-31T22:08:47.559045286-03:00
+imports:
+- name: github.com/coreos/etcd
+  version: e6de5d8091bfc6ac8f3e314137b06223493303ff
+  subpackages:
+  - clientv3
+  - clientv3
+- name: golang.org/x/net
+  version: 1e491301e022f8f977054da4c2d852decd59571f
+  subpackages:
+  - context
+testImports: []
