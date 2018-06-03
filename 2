@@ -206,31 +206,8 @@ class Minion(sleekxmpp.ClientXMPP):
 
 		def send_response(self, args, pod):
 			print("PASSOU NA ROLA CARALHO")
+			#self._handler_haproxy(pod, args['key'], args['application_name'])
 			if pod is not None and pod in self.pod_deploy_start:
-				etcd_conn = Etcd('192.168.204.128', 2379)
-				command = ['docker', 'inspect', '-f', '"{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}"', pod]
-
-				try:
-					ip_pod = self.exec_command(command)
-				except Exception as e:
-					self.plugin['docker'].response_first_deploy(ito=args['from'],
-																ifrom=self.boundjid,
-																success=False,
-																error=unicode(e))
-																
-					self.pod_deploy_start.remove(pod)
-					self.channel_connections[pod].close()
-					return
-
-				values = ast.literal_eval(etcd_conn.read('/haproxy'))
-
-				if args['application_name'] in values:
-					values[args['application_name']]['ips'].append(ip_pod)
-				else:
-					values[args['application_name']] = {'ips': [ip_pod]}
-
-				etcd_conn.write('/haproxy', json.dumps(values))
-
 				self.plugin['docker'].response_first_deploy(ito=args['from'],
                                                             ifrom=self.boundjid,
                                                             success=True,
@@ -281,6 +258,9 @@ class Minion(sleekxmpp.ClientXMPP):
 #			etcd_conn.write('/haproxy', json.dumps(values))
 #		except Exception as e:
 #			return Exception(e)
+
+	def mama(self):
+		print("PORRA")
 
     def _handler_name_containers(self):
         command = ['docker', 'ps', '--format', '"{{.Names}}"']
