@@ -42,6 +42,7 @@ class Minion(sleekxmpp.ClientXMPP):
         sleekxmpp.ClientXMPP.__init__(self, jid, password)
         self.chat_minions = 'minions'
         self.range_ports = range(10000, 10100)
+	self.hostname = socket.gethostname()
         self.add_event_handler("session_start", self.start)
         self.add_event_handler("message", self.message)
         self.add_event_handler("name_pods", self._handler_docker)
@@ -96,18 +97,7 @@ class Minion(sleekxmpp.ClientXMPP):
     def message(self, msg):
         if msg['type'] in ('chat', 'normal'):
             option = msg['body'].split()[0]
-
-            if option == "deploy":
-                try:
-                    response = self.deploy(msg)
-                    print(response)
-                except Exception as e:
-                    print(unicode(e))
-            elif option == "list_ports":
-                try:
-                    self.list_ports()
-                except Exception as e:
-                    print(e)
+	    print(option)
 
         if msg['type'] in ('groupchat', 'normal'):
             print(msg['body'])
@@ -144,44 +134,65 @@ class Minion(sleekxmpp.ClientXMPP):
 			key_etcd = iq['docker']['key']
 			application_name = iq['docker']['name']
 
-			self.pod_deploy_start.append(pod_name)
+			#self.pod_deploy_start.append(pod_name)
 
-			args = {'from': str(iq['from']), 'pod': str(pod_name), 'key': str(key_etcd), 'application_name': str(application_name)}
+			#args = {'from': str(iq['from']), 'pod': str(pod_name), 'key': str(key_etcd), 'application_name': str(application_name)}
 
-			self.channel_connections[pod_name] = Channel(server_process=self.docker_process,
-                                                         pod_id=pod_name,
-                                                         pod_args=args)
+			#self.channel_connections[pod_name] = Channel(server_process=self.docker_process,
+                        #                                 pod_id=pod_name,
+                        #                                 pod_args=args)
 
-			self.channel_connections[pod_name].register(
-                self.docker_process.public_address(), self._handler_check_deploy)
+			#self.channel_connections[pod_name].register(
+                #self.docker_process.public_address(), self._handler_check_deploy)
 
 			try:
-				result = self._handler_deploy(iq['docker']['name'],
-                                              iq['docker']['key'],
-                                              iq['docker']['user'])
+				result = self._handler_deploy(iq['from'],
+							    iq['docker']['name'],
+							    iq['docker']['key'],
+							    iq['docker']['user'])
 
 			except Exception as e:
 				self.plugin['docker'].response_first_deploy(ito=iq['from'],
                                                             ifrom=self.boundjid,
                                                             success=False,
                                                             error=unicode(e))
-				self.channel_connections[pod_name].close()
+				#self.channel_connections[pod_name].close()
 
-    def _handler_deploy(self, name, key, user):
-        ports_host = None
-
-        #etcd_conn = Etcd('192.168.204.128', 2379)
-        etcd_conn = Etcd('192.168.204.128', 2379)
+    def _handler_deploy(self, ifrom, name, key, user):
+        ports_service = []
+        etcd_conn = Etcd('172.16.95.183', 2379)
 
         try:
             values = ast.literal_eval(etcd_conn.read(key))
         except Exception as e:
             return Exception(e)
 
+	#if 'port_dst' in values:
+	#    print(values['port_dst'])
+	#    try:
+	#    	ports = self.list_ports()
+
+	#	for x in range(len(values['port_dst'])):
+	#	    for port in self.range_ports:
+	#		if str(port) not in ports:
+	#		    ports_service.append(str(port) + ':' + values[x])
+	#		    break
+
+	#    except Exception as e:
+	#	raise Exception(e)
+
         try:
-            command = self.docker_command(name, key, user, ports_host, values)
+            command = self.docker_command(name, key, user, ports_service, values)
         except Exception as e:
             return Exception(e)
+
+	self.pod_deploy_start.append(user)
+	args = {'from': str(ifrom), 'pod': str(user), 'key': str(key), 'application_name': str(name)}
+	self.channel_connections[user] = Channel(server_process=self.docker_process,
+						    pod_id=user,
+						    pod_args=args)
+
+	self.channel_connections[user].register(self.docker_process.public_address(), self._handler_check_deploy)
 
         print(command)
         try:
@@ -192,8 +203,10 @@ class Minion(sleekxmpp.ClientXMPP):
             if out:
                 return out
             if err:
+		self.channel_connections[user].close()
                 raise Exception(err.strip())
         except OSError as e:
+	    self.channel_connections[user].close()
             raise Exception(e)
 
     def _handler_check_deploy(self, event):
@@ -204,40 +217,67 @@ class Minion(sleekxmpp.ClientXMPP):
 		if 'pod' in dic_event['args']:
 			pod = dic_event['args']['pod']
 
+		def haproxy(pod, application_name):
+		    ports = []
+		    values = {}
+		    etcd_conn = Etcd('172.16.95.183', 2379)
+		    #command_address = ['docker', 'inspect', '-f', '"{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}"', pod]
+		    command_ports = ["docker", "inspect", "--format='{{range $p, $conf := .NetworkSettings.Ports}}{{$p}}:{{(index $conf 0).HostPort}}-{{end}}'", pod]
+
+		    #try:
+			#ip_pod = self.exec_command(command_address).strip().replace("'", "")
+		    #except Exception as e:
+			#raise Exception(e)
+
+		    try:
+			ports_pod = self.exec_command(command_ports).strip().replace("'", "")
+		    except Exception as e:
+			raise Exception(e)
+
+		    if ports_pod:
+			p = ports_pod.split('-')
+			p.pop()
+
+			for x in p:
+			    ports.append(x.replace('/tcp', ''))
+
+		    key_exists = etcd_conn.key_exists('/haproxy')
+
+		    if key_exists:
+			try:
+			    values = ast.literal_eval(etcd_conn.read('/haproxy'))
+			except Exception as e:
+			    raise Exception(e)
+
+		    if application_name in values:
+			values[application_name].append({'address': self.hostname, 'ports': ports})
+
+		    else:
+			values[application_name] = [{'address': self.hostname, 'ports': ports}]
+
+		    try:
+			etcd_conn.write('/haproxy', json.dumps(values))
+		    except Exception as e:
+			raise Exception(e)
+
+		    return True
+		    
 		def send_response(self, args, pod):
-			print("PASSOU NA ROLA CARALHO")
 			if pod is not None and pod in self.pod_deploy_start:
-				etcd_conn = Etcd('192.168.204.128', 2379)
-				command = ['docker', 'inspect', '-f', '"{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}"', pod]
-
-				try:
-					ip_pod = self.exec_command(command)
-				except Exception as e:
-					self.plugin['docker'].response_first_deploy(ito=args['from'],
-																ifrom=self.boundjid,
-																success=False,
-																error=unicode(e))
-																
-					self.pod_deploy_start.remove(pod)
-					self.channel_connections[pod].close()
-					return
-
-				values = ast.literal_eval(etcd_conn.read('/haproxy'))
-
-				if args['application_name'] in values:
-					values[args['application_name']]['ips'].append(ip_pod)
-				else:
-					values[args['application_name']] = {'ips': [ip_pod]}
-
-				etcd_conn.write('/haproxy', json.dumps(values))
-
+			    try:
+				haproxy(pod, args['application_name'])
 				self.plugin['docker'].response_first_deploy(ito=args['from'],
                                                             ifrom=self.boundjid,
                                                             success=True,
                                                             response='OK')
+			    except Exception as e:
+				self.plugin['docker'].response_first_deploy(ito=args['from'],
+									    ifrom=self.boundjid,
+									    success=False,
+									    error=unicode(e))
 
-				self.pod_deploy_start.remove(pod)
-				self.channel_connections[pod].close()
+			    self.pod_deploy_start.remove(pod)
+			    self.channel_connections[pod].close()
 
 		if 'status' in dic_event['docker']:
 			if 'start' in dic_event['docker']['status']:
@@ -257,30 +297,6 @@ class Minion(sleekxmpp.ClientXMPP):
                                                                 error='Error to create ' + pod)
 					self.channel_connections[pod].close()
 
-
-	#def _handler_haproxy(self, pod, key, application_name):
-#		etcd_conn = Etcd('192.168.204.128', 2379)
-#		command = ['docker', 'inspect', '-f', '"{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}"', pod]
-#
-#		try:
-#			ip_pod = self.exec_command(command)
-#		except Exception as e:
-#			return Exception(e)
-#
-#		try:
-#			values = ast.literal_eval(etcd_conn.read(key))
-#		except Exception as e:
-#			return Exception(e)
-#
-#		if application_name in values:
-#			values[application_name]['ips'].append(ip_pod)
-#		else:
-#			values[application_name] = {'ips': [ip_pod]}
-#$		
-#		try:
-#			etcd_conn.write('/haproxy', json.dumps(values))
-#		except Exception as e:
-#			return Exception(e)
 
     def _handler_name_containers(self):
         command = ['docker', 'ps', '--format', '"{{.Names}}"']
@@ -348,76 +364,18 @@ class Minion(sleekxmpp.ClientXMPP):
 
         return ports
 
-    def deploy(self, msg):
-        args = msg['body'].split()
-        hostname = args[1]
-        endpoint = args[2]
-        user_container = args[3]
-        port_host = None
-
-        etcd_conn = Etcd('192.168.204.128', 2379)
-
-        try:
-            values = ast.literal_eval(etcd_conn.read(endpoint))
-        except Exception as e:
-            raise Exception(e)
-
-        try:
-            ports = self.list_ports()
-
-            print(ports)
-            for port in self.range_ports:
-                if str(port) not in ports:
-                    port_host = str(port)
-                    break
-
-            if port_host is None:
-                raise Exception("Not more ports available in host")
-        except Exception as e:
-            raise Exception(e)
-
-        try:
-            command = self.docker_command(
-                hostname, endpoint, user_container, port_host, values)
-        except Exception as e:
-            raise Exception(e)
-
-        print(command)
-        try:
-            docker_process = subprocess.Popen(
-                command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-            (out, err) = docker_process.communicate()
-
-            if out:
-                return out
-            if err:
-                raise Exception(err.strip())
-
-        except OSError as e:
-            raise Exception(e)
-
-    def docker_command(self, hostname, endpoint, user_container, port_host, values):
+    def docker_command(self, hostname, endpoint, user_container, ports_service, values):
         command = ['docker', 'run', '--rm']
-
-        command.append('--env')
-        command.append('jid=' + user_container + '@localhost')
-        command.append('--env')
-        # command.append('etcd_url=192.168.204.128')
-        command.append('etcd_url=172.16.95.183')
-        command.append('--env')
-        command.append('etcd_endpoint=' + endpoint)
-        command.append('--env')
-        # command.append('xmpp_url=192.168.204.131')
-        command.append('xmpp_url=172.16.95.111')
 
         if 'args' in values:
             for x in values['args']:
                 command.append('--env')
                 command.append(x + '=' + values['args'][x])
 
-        if 'port_dst' in values:
-            command.append('-p')
-            command.append(port_host + ':' + values['port_dst'])
+        if 'ports_dst' in values:
+	    command.append('-P')
+	    for x in values['ports_dst']:
+		command.append('--expose=' + x)
 
         command.append('--name')
         command.append(user_container)
@@ -486,7 +444,7 @@ if __name__ == '__main__':
     # test_ns = 'http://jabber.org/protocol/chatstates'
     # xmpp['xep_0030'].add_feature(test_ns)
 
-    if xmpp.connect(address=('192.168.204.131', 5222)):
+    if xmpp.connect(address=('172.16.95.111', 5222)):
         # if xmpp.connect(address=('172.16.95.111', 5222)):
         xmpp.process(block=True)
         print("Done")
