@@ -35,6 +35,17 @@ class Etcd:
 
         return values
 
+    def key_exists(self, endpoint):
+	if not endpoint:
+	    raise Exception("Endpoint is empty")
+
+	try:
+	    self.client.read(endpoint)
+	except etcd.EtcdKeyNotFound:
+	    return False
+
+	return True
+
     def delete(self, endpoint):
         if not endpoint:
             raise Exception("Endpoint is empty")
