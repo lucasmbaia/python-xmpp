@@ -1,0 +1,3 @@
+package: github.com/lucasmbaia/etcd
+import:
+- package: github.com/Shopify/sarama
