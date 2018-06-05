@@ -214,12 +214,7 @@ class Zeus(sleekxmpp.ClientXMPP):
         except Exception as e:
 	    self._handler_send_message(msg['from'], unicode(e))
 
-        #random = str(uuid.uuid4())
-        #random = random.upper()
-        #random = random.replace("-", "")
-        #password = random[0:10]
-	#password = '123456'
-        #values_etcd['password'] = crypt.encrypt_data(password, 'id_rsa.pub')
+        self._pods_containers(pods)
 
         #etcd_conn = Etcd('192.168.204.128', 2379)
         etcd_conn = Etcd('172.16.95.183', 2379)
@@ -274,10 +269,11 @@ class Zeus(sleekxmpp.ClientXMPP):
         minions_pods = {}
         list_pods = []
         minions_count = {}
+	idx = 0
+	check_iquals = True
 
         for minion in self.jid_minions:
             try:
-		print(minion)
                 response = self.plugin['docker'].request_total_pods(
                     ito=minion, ifrom=self.boundjid)
 
@@ -287,36 +283,58 @@ class Zeus(sleekxmpp.ClientXMPP):
                 else:
                     list_pods.append(0)
 
-                # if not minions_count:
-                #    minions_count[idx] = {'total': total, 'minion': minion}
-                # else:
-                #    for count in minions_count:
-                #        if minions_count[count]['total'] == total or minions_count[count]['total'] < total:
-                #            minions_count[idx] = {
-                #                'total': total, 'minion': minion}
-                #        else:
-                #            minions_count[idx] = minions_count[count]
-                #            minions_count[count] = {
-                #                'total': total, 'minion': minion}
+                if not minions_count:
+		    minions_count[idx] = {'total': total, 'minion': minion}
+                else:
+                   for count in minions_count.keys():
+                       if minions_count[count]['total'] == total or minions_count[count]['total'] < total:
+                           minions_count[idx] = {
+                               'total': total, 'minion': minion}
+                       else:
+                           minions_count[idx] = minions_count[count]
+                           minions_count[count] = {
+                               'total': total, 'minion': minion}
 
+		idx += 1
             except IqError as e:
                 raise Exception(e.iq['error']['text'])
             except IqTimeout as t:
                 raise Exception(t)
 
-        check_iquals = all(list_pods[:1] == elem for elem in list_pods)
+	if len(list_pods) > 1:
+	    check_iquals = all(list_pods[:1] == elem for elem in list_pods)
+
         total_minions = len(self.jid_minions)
 
-        # if check_iquals:
-        for minion in self.jid_minions:
-            minions_pods[minion] = pods / total_minions
+	if pods == 1:
+	    if check_iquals:
+		minions_pods[self.jid_minions[0]] = pods
+	    else:
+		minions_pods[minions_count[0]['minion']] = pods
+	else:
+	    if check_iquals:
+		for minion in self.jid_minions:
+		    minions_pods[minion] = pods / total_minions
 
-        if pods % total_minions != 0:
-            minions_pods[self.jid_minions[:1]] += pods % total_minions
+		if pods % total_minions != 0:
+		    minions_pods[self.jid_minions[0]] += pods % total_minions
+	    else:
+		for count in range(pods):
+		    if count > 0 and minions_count[0]['total'] > minions_count[1]['total']:
+			for idx in minions_count.keys():
+			    x = idx + 1
+			    if x < len(minions_count.keys()) and minions_count[idx]['total'] > minions_count[x]['total']:
+				total = minions_count[x]['total']
+				minion = minions_count[x]['minion']
+				minions_count[x] = {'minion': minions_count[idx]['minion'], 'total': minions_count[idx]['total']}
+				minions_count[idx] = {'minion': minion, 'total': total}
 
-        # else:
-            # if (minions_count.keys()[len(minions_count) - 1]['total'] - minions_count.keys()[0]) > pods:
-            # pods_per_minion = pods / (total_minions - 2)
+		    if minions_count[0]['minion'] not in minions_pods:
+			minions_pods[minions_count[0]['minion']] = 1
+		    else:
+			minions_pods[minions_count[0]['minion']] += 1
+
+		    minions_count[0]['total'] += 1
 
         return minions_pods
 
