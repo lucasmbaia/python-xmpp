@@ -92,7 +92,7 @@ class DOCKER(BasePlugin):
 
 	def request_first_deploy(self, ito=None, ifrom=None, name=None, key=None, user=None):
 		iq = self.xmpp.Iq()
-		iq['id'] = 'first-deploy'
+		iq['id'] = 'first-deploy-' + iq['id']
 		iq['type'] = 'get'
 		iq['to'] = ito
 		iq['from'] = ifrom
@@ -113,9 +113,9 @@ class DOCKER(BasePlugin):
 
 		return iq.send(now=True)
  
-	def response_first_deploy(self, ito=None, ifrom=None, success=None, response=None, error=None):
+	def response_first_deploy(self, ito=None, ifrom=None, iq_id=None, success=None, response=None, error=None):
 		iq = self.xmpp.Iq()
-		iq['id'] = 'first-deploy'
+		iq['id'] = iq_id
 		iq['to'] = ito
 		iq['from'] = ifrom
 
@@ -132,7 +132,8 @@ class DOCKER(BasePlugin):
 			iq['type'] = 'error'
 			iq['error'] = 'cancel'
 			iq['error']['text'] = unicode(error)
-			
+	
+		print(iq)
 		iq.send(now=True)
 
 	def _handle_name_of_pods(self, iq):

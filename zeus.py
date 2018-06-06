@@ -30,7 +30,7 @@ if sys.version_info < (3, 0):
 else:
     raw_input = input
 
-#class Register(sleekxmpp.ClientXMPP):
+# class Register(sleekxmpp.ClientXMPP):
 #    def __init__(self, domain, jid, password):
 #        super(Register, self).__init__(jid, password)
 #        self.register_plugin('xep_0030')
@@ -144,20 +144,21 @@ class Zeus(sleekxmpp.ClientXMPP):
             if option == "help":
                 self.help(msg)
             elif option == "deploy":
-		thread_deploy = threading.Thread(target=self.first_deploy, args=[msg])
-		thread_deploy.daemon = True
-		thread_deploy.start()
+                thread_deploy = threading.Thread(
+                    target=self.first_deploy, args=[msg])
+                thread_deploy.daemon = True
+                thread_deploy.start()
 
-		#try:
-		#    self.first_deploy(msg)
+                # try:
+                #    self.first_deploy(msg)
 
-		#    self.send_message(mto=msg['from'],
-		#		    mbody='Sucess Deploy',
-		#		    mtype='chat')
-		#except Exception as e:
-		#    self.send_message(mto=msg['from'],
-		#		    mbody=unicode(e),
-		#		    mtype='chat')
+                #    self.send_message(mto=msg['from'],
+                #		    mbody='Sucess Deploy',
+                #		    mtype='chat')
+                # except Exception as e:
+                #    self.send_message(mto=msg['from'],
+                #		    mbody=unicode(e),
+                #		    mtype='chat')
             elif option == "register":
                 try:
                     self.register(msg)
@@ -200,77 +201,100 @@ class Zeus(sleekxmpp.ClientXMPP):
             raise Exception(t)
 
     def _handler_send_message(self, mto, body):
-	self.send_message(mto=mto,
-			mbody=body,
-			mtype='chat')
+        self.send_message(mto=mto,
+                          mbody=body,
+                          mtype='chat')
 
     def first_deploy(self, msg):
         if len(self.minions) == 0:
-	    self._handler_send_message(msg['from'], "Not have hosts to start the deploy")
+            self._handler_send_message(
+                msg['from'], "Not have hosts to start the deploy")
 
         try:
             hostname, customer, pods, values_etcd = self._get_start_infos(
                 msg['body'].split('%'))
         except Exception as e:
-	    self._handler_send_message(msg['from'], unicode(e))
+            self._handler_send_message(msg['from'], unicode(e))
 
         self._pods_containers(pods)
 
         #etcd_conn = Etcd('192.168.204.128', 2379)
-        etcd_conn = Etcd('172.16.95.183', 2379)
+        etcd_conn = Etcd('192.168.204.128', 2379)
         endpoint = '/' + customer + '/' + hostname
 
         try:
             etcd_conn.write(endpoint, values_etcd)
         except Exception as e:
-	    self._handler_send_message(msg['from'], unicode(e))
+            self._handler_send_message(msg['from'], unicode(e))
 
         try:
             self._create_room(hostname)
         except Exception as e:
-	    self._handler_send_message(msg['from'], unicode(e))
+            self._handler_send_message(msg['from'], unicode(e))
 
         if len(self.minions) == 1:
             for number in range(pods):
                 application_name = hostname + "-" + str(number)
 
-		thread_deploy_minion = threading.Thread(target=self._requet_deploy_to_minion, args=[self.jid_minions[0], hostname, endpoint, application_name, msg['from']])
-		thread_deploy_minion.daemon = True
-		thread_deploy_minion.start()
+                thread_deploy_minion = threading.Thread(target=self._requet_deploy_to_minion, args=[
+                                                        self.jid_minions[0], hostname, endpoint, application_name, msg['from']])
+                thread_deploy_minion.daemon = True
+                thread_deploy_minion.start()
         else:
-            minions_pods = self._pods_containers(pods)
-            iterator = 0
-            keys = minions_pods.keys()
+			def start_deploy(self, key, number, iterator, endpoint, hostname, ifrom):
+				for n in range(number):
+					application_name = hostname + "-" + str(iterator)
+					iterator += 1
 
-            for key in keys:
-                for number in range(minions_pods[key]):
-                    application_name = hostname + "-" + str(iterator)
-                    iterator += 1
+					thread_deploy_minion = threading.Thread(target=self._requet_deploy_to_minion,
+															args=[key, hostname, endpoint, application_name, ifrom])
+					thread_deploy_minion.daemon = True
+					thread_deploy_minion.start()
 
-		    thread_deploy_minion = threading.Thread(target=self._requet_deploy_to_minion, args=[key, hostname, endpoint, application_name, msg['from']])
-		    thread_deploy_minion.daemon = True
-		    thread_deploy_minion.start()
+			minions_pods = self._pods_containers(pods)
+			iterator = 0
+			keys = minions_pods.keys()
+
+			for key in keys:
+				thread_start_deploy = threading.Thread(target=start_deploy,
+													args=[self, key, minions_pods[key], iterator, endpoint, hostname, msg['from']])
+				thread_start_deploy.daemon = True
+				thread_start_deploy.start()
+
+				iterator += minions_pods[key]
+
+
+
+                #for number in range(minions_pods[key]):
+                #    application_name = hostname + "-" + str(iterator)
+                #    iterator += 1
+
+                #    thread_deploy_minion = threading.Thread(target=self._requet_deploy_to_minion, args=[
+                #                                            key, hostname, endpoint, application_name, msg['from']])
+                #    thread_deploy_minion.daemon = True
+                #    thread_deploy_minion.start()
 
     def _requet_deploy_to_minion(self, ito, hostname, endpoint, application_name, ifrom):
-	try:
-	    self.plugin['docker'].request_first_deploy(ito=ito,
-						    ifrom=self.boundjid,
-						    name=hostname,
-						    key=endpoint,
-						    user=application_name)
+        try:
+            self.plugin['docker'].request_first_deploy(ito=ito,
+                                                       ifrom=self.boundjid,
+                                                       name=hostname,
+                                                       key=endpoint,
+                                                       user=application_name)
 
-	    self._handler_send_message(ifrom, 'sucess deploy container ' + application_name)
-	except IqError as e:
-	    self._handler_send_message(ifrom, e.iq['error']['text'])
-	except IqTimeout as t:
-	    self._handler_send_message(ifrom, unicode(t))
+            self._handler_send_message(
+                ifrom, 'sucess deploy container ' + application_name)
+        except IqError as e:
+            self._handler_send_message(ifrom, e.iq['error']['text'])
+        except IqTimeout as t:
+            self._handler_send_message(ifrom, 'timeout container' + application_name)
 
     def _pods_containers(self, pods):
         minions_pods = {}
         list_pods = []
         minions_count = {}
-	idx = 0
-	check_iquals = True
+        idx = 0
+        check_iquals = True
 
         for minion in self.jid_minions:
             try:
@@ -284,57 +308,59 @@ class Zeus(sleekxmpp.ClientXMPP):
                     list_pods.append(0)
 
                 if not minions_count:
-		    minions_count[idx] = {'total': total, 'minion': minion}
+                    minions_count[idx] = {'total': total, 'minion': minion}
                 else:
-                   for count in minions_count.keys():
-                       if minions_count[count]['total'] == total or minions_count[count]['total'] < total:
-                           minions_count[idx] = {
-                               'total': total, 'minion': minion}
-                       else:
-                           minions_count[idx] = minions_count[count]
-                           minions_count[count] = {
-                               'total': total, 'minion': minion}
+                    for count in minions_count.keys():
+                        if minions_count[count]['total'] == total or minions_count[count]['total'] < total:
+                            minions_count[idx] = {
+                                'total': total, 'minion': minion}
+                        else:
+                            minions_count[idx] = minions_count[count]
+                            minions_count[count] = {
+                                'total': total, 'minion': minion}
 
-		idx += 1
+                idx += 1
             except IqError as e:
                 raise Exception(e.iq['error']['text'])
             except IqTimeout as t:
                 raise Exception(t)
 
-	if len(list_pods) > 1:
-	    check_iquals = all(list_pods[:1] == elem for elem in list_pods)
+        if len(list_pods) > 1:
+            check_iquals = all(list_pods[:1] == elem for elem in list_pods)
 
         total_minions = len(self.jid_minions)
 
-	if pods == 1:
-	    if check_iquals:
-		minions_pods[self.jid_minions[0]] = pods
-	    else:
-		minions_pods[minions_count[0]['minion']] = pods
-	else:
-	    if check_iquals:
-		for minion in self.jid_minions:
-		    minions_pods[minion] = pods / total_minions
+        if pods == 1:
+            if check_iquals:
+                minions_pods[self.jid_minions[0]] = pods
+            else:
+                minions_pods[minions_count[0]['minion']] = pods
+        else:
+            if check_iquals:
+                for minion in self.jid_minions:
+                    minions_pods[minion] = pods / total_minions
 
-		if pods % total_minions != 0:
-		    minions_pods[self.jid_minions[0]] += pods % total_minions
-	    else:
-		for count in range(pods):
-		    if count > 0 and minions_count[0]['total'] > minions_count[1]['total']:
-			for idx in minions_count.keys():
-			    x = idx + 1
-			    if x < len(minions_count.keys()) and minions_count[idx]['total'] > minions_count[x]['total']:
-				total = minions_count[x]['total']
-				minion = minions_count[x]['minion']
-				minions_count[x] = {'minion': minions_count[idx]['minion'], 'total': minions_count[idx]['total']}
-				minions_count[idx] = {'minion': minion, 'total': total}
+                if pods % total_minions != 0:
+                    minions_pods[self.jid_minions[0]] += pods % total_minions
+            else:
+                for count in range(pods):
+                    if count > 0 and minions_count[0]['total'] > minions_count[1]['total']:
+                        for idx in minions_count.keys():
+                            x = idx + 1
+                            if x < len(minions_count.keys()) and minions_count[idx]['total'] > minions_count[x]['total']:
+                                total = minions_count[x]['total']
+                                minion = minions_count[x]['minion']
+                                minions_count[x] = {
+                                    'minion': minions_count[idx]['minion'], 'total': minions_count[idx]['total']}
+                                minions_count[idx] = {
+                                    'minion': minion, 'total': total}
 
-		    if minions_count[0]['minion'] not in minions_pods:
-			minions_pods[minions_count[0]['minion']] = 1
-		    else:
-			minions_pods[minions_count[0]['minion']] += 1
+                    if minions_count[0]['minion'] not in minions_pods:
+                        minions_pods[minions_count[0]['minion']] = 1
+                    else:
+                        minions_pods[minions_count[0]['minion']] += 1
 
-		    minions_count[0]['total'] += 1
+                    minions_count[0]['total'] += 1
 
         return minions_pods
 
@@ -419,7 +445,7 @@ class Zeus(sleekxmpp.ClientXMPP):
         values_etcd['password'] = password
         values_etcd['image'] = 'minion'
 
-        etcd_conn = Etcd('172.16.95.183', 2379)
+        etcd_conn = Etcd('192.168.204.128', 2379)
         print(customer)
         print(hostname)
 
@@ -489,7 +515,7 @@ class Zeus(sleekxmpp.ClientXMPP):
                               e.iq['error']['text'])
 
         else:
-	    print("CARALHO")
+            print("CARALHO")
             self.plugin['xep_0045'].joinMUC(self.room,
                                             self.nick)
 
@@ -503,12 +529,12 @@ class Zeus(sleekxmpp.ClientXMPP):
     def muc_online(self, presence):
         if len(presence['muc']['nick'].strip()) > 0:
             if presence['muc']['nick'] != self.nick:
-		print(self.chat_minions, presence['from'].bare.split('@')[0])
+                print(self.chat_minions, presence['from'].bare.split('@')[0])
                 if presence['from'].bare.split('@')[0] == self.chat_minions:
                     self.minions.append(presence['muc']['nick'])
                     self.jid_minions.append(presence['muc']['jid'])
 
-                    #try:
+                    # try:
                     #    response = self.plugin['docker'].request_get_name_pods(ito=presence['muc']['jid'],
                     #                                                           ifrom=self.boundjid)
 
@@ -517,9 +543,9 @@ class Zeus(sleekxmpp.ClientXMPP):
                     #    logging.info("Pods in %s: %s" %
                     #                 (presence['muc']['jid'], self.minions_pods))
 
-                    #except IqError as e:
+                    # except IqError as e:
                     #    logging.error(
-                     #       "Could not get names of containers: %s" % e.iq['error']['text'])
+                    #       "Could not get names of containers: %s" % e.iq['error']['text'])
 
                 self.send_message(mto=presence['from'].bare,
                                   mbody="Ola Trouxa, %s %s" % (
@@ -579,8 +605,8 @@ if __name__ == '__main__':
 
     # xmpp['xep_0077'].force_registration = True
 
-    if xmpp.connect(address=('172.16.95.111', 5222)):
-    #if xmpp.connect(address=('192.168.204.131', 5222)):
+    if xmpp.connect(address=('192.168.204.131', 5222)):
+        # if xmpp.connect(address=('192.168.204.131', 5222)):
         xmpp.process(block=True)
         print("Done")
     else:
