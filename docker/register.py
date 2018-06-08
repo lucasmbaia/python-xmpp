@@ -111,7 +111,7 @@ class DOCKER(BasePlugin):
 
 		iq.append(query)
 
-		return iq.send(now=True)
+		return iq.send(now=True, timeout=120)
  
 	def response_first_deploy(self, ito=None, ifrom=None, iq_id=None, success=None, response=None, error=None):
 		iq = self.xmpp.Iq()

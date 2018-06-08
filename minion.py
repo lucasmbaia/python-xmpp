@@ -162,7 +162,7 @@ class Minion(sleekxmpp.ClientXMPP):
 
     def _handler_deploy(self, ifrom, name, key, user, iq_id):
         ports_service = []
-        etcd_conn = Etcd('192.168.204.128', 2379)
+        etcd_conn = Etcd('172.16.95.183', 2379)
 
         try:
             values = ast.literal_eval(etcd_conn.read(key))
@@ -224,7 +224,7 @@ class Minion(sleekxmpp.ClientXMPP):
         def haproxy(pod, application_name):
             ports = []
             values = {}
-            etcd_conn = Etcd('192.168.204.128', 2379)
+            etcd_conn = Etcd('172.16.95.183', 2379)
             #command_address = ['docker', 'inspect', '-f', '"{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}"', pod]
             command_ports = [
                 "docker", "inspect", "--format='{{range $p, $conf := .NetworkSettings.Ports}}{{$p}}:{{(index $conf 0).HostPort}}-{{end}}'", pod]
@@ -292,7 +292,7 @@ class Minion(sleekxmpp.ClientXMPP):
         if 'status' in dic_event['docker']:
             if 'start' in dic_event['docker']['status']:
                 response = threading.Timer(
-                    25, send_response, [self, dic_event['args'], pod])
+                    10, send_response, [self, dic_event['args'], pod])
                 response.daemon = True
                 response.start()
 
@@ -453,7 +453,7 @@ if __name__ == '__main__':
     # test_ns = 'http://jabber.org/protocol/chatstates'
     # xmpp['xep_0030'].add_feature(test_ns)
 
-    if xmpp.connect(address=('192.168.204.131', 5222)):
+    if xmpp.connect(address=('172.16.95.111', 5222)):
         # if xmpp.connect(address=('172.16.95.111', 5222)):
         xmpp.process(block=True)
         print("Done")
