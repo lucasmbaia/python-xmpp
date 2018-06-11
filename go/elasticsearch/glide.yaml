@@ -1,0 +1,4 @@
+package: github.com/lucasmbaia/elasticsearch
+import:
+- package: github.com/olivere/elastic
+- package: github.com/Shopify/sarama

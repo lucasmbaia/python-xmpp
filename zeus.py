@@ -25,222 +25,212 @@ from sleekxmpp.plugins.docker.register import DOCKER
 
 
 if sys.version_info < (3, 0):
-    reload(sys)
-    sys.setdefaultencoding('utf8')
+	reload(sys)
+	sys.setdefaultencoding('utf8')
 else:
-    raw_input = input
-
-# class Register(sleekxmpp.ClientXMPP):
-#    def __init__(self, domain, jid, password):
-#        super(Register, self).__init__(jid, password)
-#        self.register_plugin('xep_0030')
-#        self.register_plugin('xep_0004')
-#        self.register_plugin('xep_0066')
-#        self.register_plugin('xep_0077')
-#	self.register_plugin('xep_0133')
-#        self.add_event_handler("session_start", self.start, threaded=True)
-#	self.add_event_handler("failed_auth", self.failed_auth)
-
-#    def start(self, event):
-#        self.disconnect(wait=True)
-
-#    def run(self):
-#        self.connect(address=('172.16.95.111', 5222))
-#        self.process(threaded=True)
-
-#    def failed_auth(self, event):
-#	self.register()
-
-#    def register(self):
-#        create = self.Iq()
-#        create['type'] = 'set'
-#        create['register']['username'] = self.boundjid.user
-#        create['register']['password'] = self.password
-
-#        try:
-#            create.send(now=True)
-#            logging.info("Account created for %s" % self.boundjid)
-#        except IqError as e:
-#            logging.error("Could not register account: %s" %
-#                          e.iq['error']['text'])
-#        except IqTimeout:
-#            logging.error("No response from server.")
+	raw_input = input
 
 
 class Zeus(sleekxmpp.ClientXMPP):
-    def __init__(self, jid, password):
-        sleekxmpp.ClientXMPP.__init__(self, jid, password)
-        self.minions = []
-        self.jid_minions = []
-        self.minions_pods = {}
-        self.chat_minions = 'minions'
-        self.add_event_handler("session_start", self.start)
-        self.add_event_handler("message", self.message)
+	def __init__(self, jid, password):
+		sleekxmpp.ClientXMPP.__init__(self, jid, password)
+		self.minions = []
+		self.jid_minions = []
+		self.minions_pods = {}
+		self.chat_minions = 'minions'
+		self.add_event_handler("session_start", self.start)
+		self.add_event_handler("message", self.message)
 
-    def start(self, event):
-        self.send_presence()
-        self.get_roster()
-        global form
+	def start(self, event):
+		self.send_presence()
+		self.get_roster()
+		global form
 
-        self.room = 'minions@conference.localhost'
-        self.nick = self.boundjid.user
+		self.room = 'minions@conference.localhost'
+		self.nick = self.boundjid.user
 
-        rooms = self.plugin['xep_0030'].get_items(jid='conference.localhost')
+		rooms = self.plugin['xep_0030'].get_items(jid='conference.localhost')
 
-        for room in rooms['disco_items']:
-            if room['jid'] != self.room:
-                self.plugin['xep_0045'].joinMUC(room['jid'],
-                                                self.nick)
+		for room in rooms['disco_items']:
+			if room['jid'] != self.room:
+				self.plugin['xep_0045'].joinMUC(room['jid'],
+												self.nick)
 
-                self.add_event_handler("muc::%s::got_online" %
-                                       room['jid'], self.muc_online)
-                self.add_event_handler("muc::%s::got_offline" %
-                                       room['jid'], self.muc_offline)
-                logging.info("Chat room %s success!" % room['jid'])
+				self.add_event_handler("muc::%s::got_online" %
+									   room['jid'], self.muc_online)
+				self.add_event_handler("muc::%s::got_offline" %
+									   room['jid'], self.muc_offline)
+				logging.info("Chat room %s success!" % room['jid'])
 
-        try:
-            room_exist = self.plugin['xep_0030'].get_info(jid=self.room)
-        except IqError as e:
-            if e.condition == 'item-not-found':
-                self.plugin['xep_0045'].joinMUC(self.room,
-                                                self.nick,
-                                                wait=True)
+		try:
+			room_exist = self.plugin['xep_0030'].get_info(jid=self.room)
+		except IqError as e:
+			if e.condition == 'item-not-found':
+				self.plugin['xep_0045'].joinMUC(self.room,
+												self.nick,
+												wait=True)
 
-                form = self.plugin['xep_0045'].getRoomConfig(self.room)
-                form.set_values({'muc#roomconfig_persistentroom': 1,
-                                 'muc#roomconfig_passwordprotectedroom': 0,
-                                 'muc#roomconfig_publicroom': 1,
-                                 'muc#roomconfig_roomdesc': 'TESTE!'})
+				form = self.plugin['xep_0045'].getRoomConfig(self.room)
+				form.set_values({'muc#roomconfig_persistentroom': 1,
+								 'muc#roomconfig_passwordprotectedroom': 0,
+								 'muc#roomconfig_publicroom': 1,
+								 'muc#roomconfig_roomdesc': 'TESTE!'})
 
-                try:
-                    self.plugin['xep_0045'].configureRoom(self.room, form=form)
-                    logging.info("Chat room %s success created!" % self.room)
-                except IqError as e:
-                    logging.error("Could not create chat room: %s" %
-                                  e.iq['error']['text'])
+				try:
+					self.plugin['xep_0045'].configureRoom(self.room, form=form)
+					logging.info("Chat room %s success created!" % self.room)
+				except IqError as e:
+					logging.error("Could not create chat room: %s" %
+								  e.iq['error']['text'])
 
-                    self.disconnect()
-            else:
-                logging.error("Could not create chat room: %s" %
-                              e.iq['error']['text'])
+					self.disconnect()
+			else:
+				logging.error("Could not create chat room: %s" %
+							  e.iq['error']['text'])
 
-                self.disconnect()
-        else:
-            self.plugin['xep_0045'].joinMUC(self.room,
-                                            self.nick)
+				self.disconnect()
+		else:
+			self.plugin['xep_0045'].joinMUC(self.room,
+											self.nick)
 
-            logging.info("Chat room %s success created!" % self.room)
+			logging.info("Chat room %s success created!" % self.room)
 
-        self.add_event_handler("muc::%s::got_online" %
-                               self.room, self.muc_online)
-        self.add_event_handler("muc::%s::got_offline" %
-                               self.room, self.muc_offline)
+		self.add_event_handler("muc::%s::got_online" %
+							   self.room, self.muc_online)
+		self.add_event_handler("muc::%s::got_offline" %
+							   self.room, self.muc_offline)
 
-    def message(self, msg):
-        print("CHAT")
-        if msg['type'] in ('chat', 'normal'):
-            option = msg['body'].split()[0]
+	def message(self, msg):
+		print("CHAT")
+		if msg['type'] in ('chat', 'normal'):
+			option = msg['body'].split()[0]
 
-            if option == "help":
-                self.help(msg)
-            elif option == "deploy":
-                thread_deploy = threading.Thread(
-                    target=self.first_deploy, args=[msg])
-                thread_deploy.daemon = True
-                thread_deploy.start()
+			if option == "help":
+				self.help(msg)
+			elif option == "deploy":
+				thread_deploy = threading.Thread(
+					target=self.first_deploy, args=[msg])
+				thread_deploy.daemon = True
+				thread_deploy.start()
 
-                # try:
-                #    self.first_deploy(msg)
+			elif option == "register":
+				try:
+					self.register(msg)
+				except Exception as e:
+					self.send_message(mto=msg['from'],
+									  mbody=unicode(e),
+									  mtype='chat')
 
-                #    self.send_message(mto=msg['from'],
-                #		    mbody='Sucess Deploy',
-                #		    mtype='chat')
-                # except Exception as e:
-                #    self.send_message(mto=msg['from'],
-                #		    mbody=unicode(e),
-                #		    mtype='chat')
-            elif option == "register":
-                try:
-                    self.register(msg)
-                except Exception as e:
-                    self.send_message(mto=msg['from'],
-                                      mbody=unicode(e),
-                                      mtype='chat')
+			elif option == "create_room":
+				self.create_room(msg)
+			elif option == "stop" or option == "start" or option == "pause" or option == "resume":
+				body = msg['body'].split(' ')
 
-            elif option == "create_room":
-                self.create_room(msg)
-            else:
-                print(option)
-                self.send_message(mto=msg['from'],
-                                  mbody='Invalid Option',
-                                  mtype='chat')
+				try:
+					print("PORRA")
+					self.action_container(action=option, container='lucas')
+					response = 'Success ' + option + ' ' + body[1]
+				except Exception as e:
+					response = unicode(e)
 
-        if msg['type'] in ('groupchat', 'normal'):
-            print(msg['body'])
+				self.send_message(mto=msg['from'],
+								mbody=response,
+								mtype='chat')
+			else:
+				print(option)
+				self.send_message(mto=msg['from'],
+								  mbody='Invalid Option',
+								  mtype='chat')
 
-    def help(self, msg):
-        custom_msg = self.Message()
-        custom_msg[
-            'body'] = 'Here&apos;s my .plan for today: 1. Add the following examples to XEP-0071: - ordered and unordered lists - more styles (e.g., indentation) 2. Kick back and relax'
-        custom_msg['html'][
-            'body'] = '<p>Here&apos;s my .plan for today:</p><ol><li>Add the following examples to XEP-0071:<ul><li>ordered and unordered lists</li><li>more styles (e.g., indentation)</li></ul></li><li>Kick back and relax</li></ol>'
+		if msg['type'] in ('groupchat', 'normal'):
+			print(msg['body'])
 
-        self.send_message(mto=msg['from'],
-                          mbody=custom_msg['body'],
-                          mhtml=custom_msg['html'],
-                          mtype='chat')
+	def help(self, msg):
+		custom_msg = self.Message()
+		custom_msg[
+			'body'] = 'Here&apos;s my .plan for today: 1. Add the following examples to XEP-0071: - ordered and unordered lists - more styles (e.g., indentation) 2. Kick back and relax'
+		custom_msg['html'][
+			'body'] = '<p>Here&apos;s my .plan for today:</p><ol><li>Add the following examples to XEP-0071:<ul><li>ordered and unordered lists</li><li>more styles (e.g., indentation)</li></ul></li><li>Kick back and relax</li></ol>'
 
-    def get_number_containers(self, to):
-        try:
-            response = self.plugin['docker'].request_total_pods(
-                ito=to, ifrom=self.boundjid)
-            return response['docker']['total']
-        except IqError as e:
-            raise Exception(e.iq['error']['text'])
-        except IqTimeout as t:
-            raise Exception(t)
+		self.send_message(mto=msg['from'],
+						  mbody=custom_msg['body'],
+						  mhtml=custom_msg['html'],
+						  mtype='chat')
 
-    def _handler_send_message(self, mto, body):
-        self.send_message(mto=mto,
-                          mbody=body,
-                          mtype='chat')
+	def get_number_containers(self, to):
+		try:
+			response = self.plugin['docker'].request_total_pods(
+				ito=to, ifrom=self.boundjid)
+			return response['docker']['total']
+		except IqError as e:
+			raise Exception(e.iq['error']['text'])
+		except IqTimeout as t:
+			raise Exception(t)
 
-    def first_deploy(self, msg):
-        if len(self.minions) == 0:
-            self._handler_send_message(
-                msg['from'], "Not have hosts to start the deploy")
+	def _handler_send_message(self, mto, body):
+		self.send_message(mto=mto, mbody=body, mtype='chat')
 
-        try:
-            hostname, customer, pods, values_etcd = self._get_start_infos(
-                msg['body'].split('%'))
-        except Exception as e:
-            self._handler_send_message(msg['from'], unicode(e))
+	def action_container(self, action, container):
+		print("VADIA")
 
-        self._pods_containers(pods)
+		for minion in self.jid_minions:
+			print(minion)
+			try:
+				containers = self.plugin['docker'].request_get_name_pods(ito=minion,
+																		 ifrom=self.boundjid)
 
-        #etcd_conn = Etcd('192.168.204.128', 2379)
-        etcd_conn = Etcd('172.16.95.183', 2379)
-        endpoint = '/' + customer + '/' + hostname
+				print(containers)
 
-        try:
-            etcd_conn.write(endpoint, values_etcd)
-        except Exception as e:
-            self._handler_send_message(msg['from'], unicode(e))
+				if container in containers['docker']['name']:
+					self.plugin['docker'].request_action_container(container=container,
+																   action=action,
+																   ito=minion,
+																   ifrom=self.boundjid)
 
-        try:
-            self._create_room(hostname)
-        except Exception as e:
-            self._handler_send_message(msg['from'], unicode(e))
+					return True
+			except IqError as e:
+				raise Exception(e.iq['error']['text'])
+			except IqTimeout as t:
+				raise Exception(t)
 
-        if len(self.minions) == 1:
-            for number in range(pods):
-                application_name = hostname + "-" + str(number)
+		raise Exception("Container " + container + " is not exists")
 
-                thread_deploy_minion = threading.Thread(target=self._requet_deploy_to_minion, args=[
-                                                        self.jid_minions[0], hostname, endpoint, application_name, msg['from']])
-                thread_deploy_minion.daemon = True
-                thread_deploy_minion.start()
-        else:
+	def first_deploy(self, msg):
+		if len(self.minions) == 0:
+			self._handler_send_message(
+				msg['from'], "Not have hosts to start the deploy")
+
+		try:
+			hostname, customer, pods, values_etcd = self._get_start_infos(
+				msg['body'].split('%'))
+		except Exception as e:
+			self._handler_send_message(msg['from'], unicode(e))
+
+		self._pods_containers(pods)
+
+		#etcd_conn = Etcd('192.168.204.128', 2379)
+		etcd_conn = Etcd('192.168.204.128', 2379)
+		endpoint = '/' + customer + '/' + hostname
+
+		try:
+			etcd_conn.write(endpoint, values_etcd)
+		except Exception as e:
+			self._handler_send_message(msg['from'], unicode(e))
+
+		try:
+			self._create_room(hostname)
+		except Exception as e:
+			self._handler_send_message(msg['from'], unicode(e))
+
+		if len(self.minions) == 1:
+			for number in range(pods):
+				application_name = hostname + "-" + str(number)
+
+				thread_deploy_minion = threading.Thread(target=self._requet_deploy_to_minion, args=[
+														self.jid_minions[0], hostname, endpoint, application_name, msg['from']])
+				thread_deploy_minion.daemon = True
+				thread_deploy_minion.start()
+		else:
 			def start_deploy(self, key, number, iterator, endpoint, hostname, ifrom):
 				for n in range(number):
 					application_name = hostname + "-" + str(iterator)
@@ -257,357 +247,357 @@ class Zeus(sleekxmpp.ClientXMPP):
 
 			for key in keys:
 				thread_start_deploy = threading.Thread(target=start_deploy,
-													args=[self, key, minions_pods[key], iterator, endpoint, hostname, msg['from']])
+													   args=[self, key, minions_pods[key], iterator, endpoint, hostname, msg['from']])
 				thread_start_deploy.daemon = True
 				thread_start_deploy.start()
 
 				iterator += minions_pods[key]
 
+				# for number in range(minions_pods[key]):
+				#    application_name = hostname + "-" + str(iterator)
+				#    iterator += 1
 
+				#    thread_deploy_minion = threading.Thread(target=self._requet_deploy_to_minion, args=[
+				#                                            key, hostname, endpoint, application_name, msg['from']])
+				#    thread_deploy_minion.daemon = True
+				#    thread_deploy_minion.start()
 
-                #for number in range(minions_pods[key]):
-                #    application_name = hostname + "-" + str(iterator)
-                #    iterator += 1
+	def _requet_deploy_to_minion(self, ito, hostname, endpoint, application_name, ifrom):
+		try:
+			self.plugin['docker'].request_first_deploy(ito=ito,
+													   ifrom=self.boundjid,
+													   name=hostname,
+													   key=endpoint,
+													   user=application_name)
 
-                #    thread_deploy_minion = threading.Thread(target=self._requet_deploy_to_minion, args=[
-                #                                            key, hostname, endpoint, application_name, msg['from']])
-                #    thread_deploy_minion.daemon = True
-                #    thread_deploy_minion.start()
+			self._handler_send_message(
+				ifrom, 'sucess deploy container ' + application_name)
+		except IqError as e:
+			self._handler_send_message(ifrom, e.iq['error']['text'])
+		except IqTimeout as t:
+			self._handler_send_message(
+				ifrom, 'timeout container' + application_name)
 
-    def _requet_deploy_to_minion(self, ito, hostname, endpoint, application_name, ifrom):
-        try:
-            self.plugin['docker'].request_first_deploy(ito=ito,
-                                                       ifrom=self.boundjid,
-                                                       name=hostname,
-                                                       key=endpoint,
-                                                       user=application_name)
+	def _pods_containers(self, pods):
+		minions_pods = {}
+		list_pods = []
+		minions_count = {}
+		idx = 0
+		check_iquals = True
 
-            self._handler_send_message(
-                ifrom, 'sucess deploy container ' + application_name)
-        except IqError as e:
-            self._handler_send_message(ifrom, e.iq['error']['text'])
-        except IqTimeout as t:
-            self._handler_send_message(ifrom, 'timeout container' + application_name)
+		for minion in self.jid_minions:
+			try:
+				response = self.plugin['docker'].request_total_pods(
+					ito=minion, ifrom=self.boundjid)
 
-    def _pods_containers(self, pods):
-        minions_pods = {}
-        list_pods = []
-        minions_count = {}
-        idx = 0
-        check_iquals = True
+				if len(response['docker']['total'].strip()) > 0:
+					total = int(response['docker']['total'])
+					list_pods.append(total)
+				else:
+					list_pods.append(0)
 
-        for minion in self.jid_minions:
-            try:
-                response = self.plugin['docker'].request_total_pods(
-                    ito=minion, ifrom=self.boundjid)
+				if not minions_count:
+					minions_count[idx] = {'total': total, 'minion': minion}
+				else:
+					for count in minions_count.keys():
+						if minions_count[count]['total'] == total or minions_count[count]['total'] < total:
+							minions_count[idx] = {
+								'total': total, 'minion': minion}
+						else:
+							minions_count[idx] = minions_count[count]
+							minions_count[count] = {
+								'total': total, 'minion': minion}
 
-                if len(response['docker']['total'].strip()) > 0:
-                    total = int(response['docker']['total'])
-                    list_pods.append(total)
-                else:
-                    list_pods.append(0)
+				idx += 1
+			except IqError as e:
+				raise Exception(e.iq['error']['text'])
+			except IqTimeout as t:
+				raise Exception(t)
 
-                if not minions_count:
-                    minions_count[idx] = {'total': total, 'minion': minion}
-                else:
-                    for count in minions_count.keys():
-                        if minions_count[count]['total'] == total or minions_count[count]['total'] < total:
-                            minions_count[idx] = {
-                                'total': total, 'minion': minion}
-                        else:
-                            minions_count[idx] = minions_count[count]
-                            minions_count[count] = {
-                                'total': total, 'minion': minion}
+		if len(list_pods) > 1:
+			check_iquals = all(list_pods[:1] == elem for elem in list_pods)
 
-                idx += 1
-            except IqError as e:
-                raise Exception(e.iq['error']['text'])
-            except IqTimeout as t:
-                raise Exception(t)
+		total_minions = len(self.jid_minions)
 
-        if len(list_pods) > 1:
-            check_iquals = all(list_pods[:1] == elem for elem in list_pods)
+		if pods == 1:
+			if check_iquals:
+				minions_pods[self.jid_minions[0]] = pods
+			else:
+				minions_pods[minions_count[0]['minion']] = pods
+		else:
+			if check_iquals:
+				for minion in self.jid_minions:
+					minions_pods[minion] = pods / total_minions
 
-        total_minions = len(self.jid_minions)
+				if pods % total_minions != 0:
+					minions_pods[self.jid_minions[0]] += pods % total_minions
+			else:
+				for count in range(pods):
+					if count > 0 and minions_count[0]['total'] > minions_count[1]['total']:
+						for idx in minions_count.keys():
+							x = idx + 1
+							if x < len(minions_count.keys()) and minions_count[idx]['total'] > minions_count[x]['total']:
+								total = minions_count[x]['total']
+								minion = minions_count[x]['minion']
+								minions_count[x] = {
+									'minion': minions_count[idx]['minion'], 'total': minions_count[idx]['total']}
+								minions_count[idx] = {
+									'minion': minion, 'total': total}
 
-        if pods == 1:
-            if check_iquals:
-                minions_pods[self.jid_minions[0]] = pods
-            else:
-                minions_pods[minions_count[0]['minion']] = pods
-        else:
-            if check_iquals:
-                for minion in self.jid_minions:
-                    minions_pods[minion] = pods / total_minions
+					if minions_count[0]['minion'] not in minions_pods:
+						minions_pods[minions_count[0]['minion']] = 1
+					else:
+						minions_pods[minions_count[0]['minion']] += 1
 
-                if pods % total_minions != 0:
-                    minions_pods[self.jid_minions[0]] += pods % total_minions
-            else:
-                for count in range(pods):
-                    if count > 0 and minions_count[0]['total'] > minions_count[1]['total']:
-                        for idx in minions_count.keys():
-                            x = idx + 1
-                            if x < len(minions_count.keys()) and minions_count[idx]['total'] > minions_count[x]['total']:
-                                total = minions_count[x]['total']
-                                minion = minions_count[x]['minion']
-                                minions_count[x] = {
-                                    'minion': minions_count[idx]['minion'], 'total': minions_count[idx]['total']}
-                                minions_count[idx] = {
-                                    'minion': minion, 'total': total}
+					minions_count[0]['total'] += 1
 
-                    if minions_count[0]['minion'] not in minions_pods:
-                        minions_pods[minions_count[0]['minion']] = 1
-                    else:
-                        minions_pods[minions_count[0]['minion']] += 1
+		return minions_pods
 
-                    minions_count[0]['total'] += 1
+	def _get_start_infos(self, values):
+		values_etcd = {'pods': 1}
+		hostname = None
+		customer = None
+		pods = 1
 
-        return minions_pods
+		# print(values)
+		# if "--name" not in values:
+		#    raise Exception("Name of application is not informed")
 
-    def _get_start_infos(self, values):
-        values_etcd = {'pods': 1}
-        hostname = None
-        customer = None
-        pods = 1
+		# if "--customer" not in values:
+		#    raise Exception("Name of customer is not informed")
 
-        # print(values)
-        # if "--name" not in values:
-        #    raise Exception("Name of application is not informed")
+		for value in values:
+			if "--cpus" in value:
+				values_etcd['cpus'] = value.replace("--cpus=", "").strip()
+			if "--memory" in value:
+				values_etcd['memory'] = value.replace("--memory=", "").strip()
+			if "--args" in value:
+				dic = {}
+				args = value.strip().replace(
+					"--args[", "").replace("]", "").strip(',')
 
-        # if "--customer" not in values:
-        #    raise Exception("Name of customer is not informed")
+				for arg in args:
+					x = arg.split(':')
+					dic[x[0]] = x[1]
 
-        for value in values:
-            if "--cpus" in value:
-                values_etcd['cpus'] = value.replace("--cpus=", "").strip()
-            if "--memory" in value:
-                values_etcd['memory'] = value.replace("--memory=", "").strip()
-            if "--args" in value:
-                dic = {}
-                args = value.strip().replace(
-                    "--args[", "").replace("]", "").strip(',')
+				values_etcd['args'] = dic
+			if "--name" in value:
+				hostname = value.replace("--name=", "").strip()
+			if "--customer" in value:
+				customer = value.replace("--customer=", "").strip()
+			if "--pods" in value:
+				pods = int(value.replace("--pods=", "").strip())
+				values_etcd['pods'] = pods
+			if "--ports" in value:
+				ports = value.strip().replace("--ports=", "").strip().split(',')
+				values_etcd['ports_dst'] = ports
+			if "--image" in value:
+				values_etcd['image'] = value.replace("--image=", "").strip()
 
-                for arg in args:
-                    x = arg.split(':')
-                    dic[x[0]] = x[1]
+		return hostname, customer, pods, values_etcd
 
-                values_etcd['args'] = dic
-            if "--name" in value:
-                hostname = value.replace("--name=", "").strip()
-            if "--customer" in value:
-                customer = value.replace("--customer=", "").strip()
-            if "--pods" in value:
-                pods = int(value.replace("--pods=", "").strip())
-                values_etcd['pods'] = pods
-            if "--ports" in value:
-                ports = value.strip().replace("--ports=", "").strip().split(',')
-                values_etcd['ports_dst'] = ports
-            if "--image" in value:
-                values_etcd['image'] = value.replace("--image=", "").strip()
+	def deploy(self, msg):
+		values_etcd = {'pods': 1}
+		hostname = None
+		customer = None
+		pods = 1
+		infos = msg['body'].split('%')
 
-        return hostname, customer, pods, values_etcd
+		for value in infos:
+			if "--cpus" in value:
+				values_etcd['cpus'] = value.replace("--cpus=", "").strip()
+			if "--memory" in value:
+				values_etcd['memory'] = value.replace("--memory=", "").strip()
+			if "--args" in value:
+				dic = {}
+				args = value.strip().replace(
+					"--args[", "").replace("]", "").split(',')
 
-    def deploy(self, msg):
-        values_etcd = {'pods': 1}
-        hostname = None
-        customer = None
-        pods = 1
-        infos = msg['body'].split('%')
+				for arg in args:
+					x = arg.split(':')
+					dic[x[0]] = x[1]
 
-        for value in infos:
-            if "--cpus" in value:
-                values_etcd['cpus'] = value.replace("--cpus=", "").strip()
-            if "--memory" in value:
-                values_etcd['memory'] = value.replace("--memory=", "").strip()
-            if "--args" in value:
-                dic = {}
-                args = value.strip().replace(
-                    "--args[", "").replace("]", "").split(',')
+				values_etcd['args'] = dic
+			if "--name" in value:
+				hostname = value.replace("--name=", "").strip()
+			if "--customer" in value:
+				customer = value.replace("--customer=", "").strip()
+			if "--pods" in value:
+				pods = int(value.replace("--pods=", "").strip())
+				values_etcd['pods'] = pods
+			if "--port" in value:
+				port = value.replace("--port=", "").strip()
+				values_etcd['port_dst'] = port
 
-                for arg in args:
-                    x = arg.split(':')
-                    dic[x[0]] = x[1]
+		password = crypt.encrypt_data('123456', 'id_rsa.pub')
 
-                values_etcd['args'] = dic
-            if "--name" in value:
-                hostname = value.replace("--name=", "").strip()
-            if "--customer" in value:
-                customer = value.replace("--customer=", "").strip()
-            if "--pods" in value:
-                pods = int(value.replace("--pods=", "").strip())
-                values_etcd['pods'] = pods
-            if "--port" in value:
-                port = value.replace("--port=", "").strip()
-                values_etcd['port_dst'] = port
+		values_etcd['password'] = password
+		values_etcd['image'] = 'minion'
 
-        password = crypt.encrypt_data('123456', 'id_rsa.pub')
+		etcd_conn = Etcd('192.168.204.128', 2379)
+		print(customer)
+		print(hostname)
 
-        values_etcd['password'] = password
-        values_etcd['image'] = 'minion'
+		endpoint = '/' + customer + '/' + hostname
 
-        etcd_conn = Etcd('172.16.95.183', 2379)
-        print(customer)
-        print(hostname)
+		try:
+			etcd_conn.write(endpoint, values_etcd)
+		except Exception as e:
+			raise Exception(e)
 
-        endpoint = '/' + customer + '/' + hostname
+		self._create_room(hostname)
 
-        try:
-            etcd_conn.write(endpoint, values_etcd)
-        except Exception as e:
-            raise Exception(e)
+		for number in range(pods):
+			user = hostname + '-' + str(number)
+			create_user = Register(self.boundjid.domain,
+								   user + "@" + self.boundjid.domain, '123456')
+			create_user.run()
 
-        self._create_room(hostname)
+			self.plugin['docker'].request_first_deploy(ito=self.jid_minions[0],
+													   ifrom=self.boundjid,
+													   name=hostname,
+													   key=endpoint,
+													   user=user)
+			print(msg)
 
-        for number in range(pods):
-            user = hostname + '-' + str(number)
-            create_user = Register(self.boundjid.domain,
-                                   user + "@" + self.boundjid.domain, '123456')
-            create_user.run()
+	def register(self, msg):
+		args = msg['body'].split()
 
-            self.plugin['docker'].request_first_deploy(ito=self.jid_minions[0],
-                                                       ifrom=self.boundjid,
-                                                       name=hostname,
-                                                       key=endpoint,
-                                                       user=user)
-            print(msg)
+		if len(args) < 3:
+			raise Exception("Number of args is invalid")
 
-    def register(self, msg):
-        args = msg['body'].split()
+		create = Register(self.boundjid.domain,
+						  args[1] + "@" + self.boundjid.domain, '123456')
+		create.run()
 
-        if len(args) < 3:
-            raise Exception("Number of args is invalid")
+	def create_room(self, msg):
+		args = msg['body'].split()
+		self._create_room(args[1])
 
-        create = Register(self.boundjid.domain,
-                          args[1] + "@" + self.boundjid.domain, '123456')
-        create.run()
+	def _create_room(self, name):
+		self.room = name + '@conference.localhost'
 
-    def create_room(self, msg):
-        args = msg['body'].split()
-        self._create_room(args[1])
+		try:
+			room_exist = self.plugin['xep_0030'].get_info(jid=self.room)
+		except IqError as e:
+			if e.condition == 'item-not-found':
+				self.plugin['xep_0045'].joinMUC(self.room,
+												self.nick,
+												wait=True)
 
-    def _create_room(self, name):
-        self.room = name + '@conference.localhost'
+				form = self.plugin['xep_0045'].getRoomConfig(self.room)
+				form.set_values({'muc#roomconfig_persistentroom': 1,
+								 'muc#roomconfig_passwordprotectedroom': 0,
+								 'muc#roomconfig_publicroom': 1,
+								 'muc#roomconfig_roomdesc': 'TESTE!',
+								 'muc#roomconfig_roomname': self.room})
 
-        try:
-            room_exist = self.plugin['xep_0030'].get_info(jid=self.room)
-        except IqError as e:
-            if e.condition == 'item-not-found':
-                self.plugin['xep_0045'].joinMUC(self.room,
-                                                self.nick,
-                                                wait=True)
+				try:
+					self.plugin['xep_0045'].configureRoom(self.room, form=form)
+					logging.info("Chat room %s success created!" % self.room)
+				except IqError as e:
+					logging.error("Could not create chat room: %s" %
+								  e.iq['error']['text'])
 
-                form = self.plugin['xep_0045'].getRoomConfig(self.room)
-                form.set_values({'muc#roomconfig_persistentroom': 1,
-                                 'muc#roomconfig_passwordprotectedroom': 0,
-                                 'muc#roomconfig_publicroom': 1,
-                                 'muc#roomconfig_roomdesc': 'TESTE!',
-                                 'muc#roomconfig_roomname': self.room})
+			else:
+				logging.error("Could not create chat room: %s" %
+							  e.iq['error']['text'])
 
-                try:
-                    self.plugin['xep_0045'].configureRoom(self.room, form=form)
-                    logging.info("Chat room %s success created!" % self.room)
-                except IqError as e:
-                    logging.error("Could not create chat room: %s" %
-                                  e.iq['error']['text'])
+		else:
+			print("CARALHO")
+			self.plugin['xep_0045'].joinMUC(self.room,
+											self.nick)
 
-            else:
-                logging.error("Could not create chat room: %s" %
-                              e.iq['error']['text'])
+			logging.info("Chat room %s success created!" % self.room)
 
-        else:
-            print("CARALHO")
-            self.plugin['xep_0045'].joinMUC(self.room,
-                                            self.nick)
+		self.add_event_handler("muc::%s::got_online" %
+							   self.room, self.muc_online)
+		self.add_event_handler("muc::%s::got_offline" %
+							   self.room, self.muc_offline)
 
-            logging.info("Chat room %s success created!" % self.room)
+	def muc_online(self, presence):
+		if len(presence['muc']['nick'].strip()) > 0:
+			if presence['muc']['nick'] != self.nick:
+				print(self.chat_minions, presence['from'].bare.split('@')[0])
+				if presence['from'].bare.split('@')[0] == self.chat_minions:
+					self.minions.append(presence['muc']['nick'])
+					self.jid_minions.append(presence['muc']['jid'])
 
-        self.add_event_handler("muc::%s::got_online" %
-                               self.room, self.muc_online)
-        self.add_event_handler("muc::%s::got_offline" %
-                               self.room, self.muc_offline)
+					# try:
+					#    response = self.plugin['docker'].request_get_name_pods(ito=presence['muc']['jid'],
+					#                                                           ifrom=self.boundjid)
 
-    def muc_online(self, presence):
-        if len(presence['muc']['nick'].strip()) > 0:
-            if presence['muc']['nick'] != self.nick:
-                print(self.chat_minions, presence['from'].bare.split('@')[0])
-                if presence['from'].bare.split('@')[0] == self.chat_minions:
-                    self.minions.append(presence['muc']['nick'])
-                    self.jid_minions.append(presence['muc']['jid'])
+					#    self.minions_pods = response['docker']['name'].split(
+					#        ',')
+					#    logging.info("Pods in %s: %s" %
+					#                 (presence['muc']['jid'], self.minions_pods))
 
-                    # try:
-                    #    response = self.plugin['docker'].request_get_name_pods(ito=presence['muc']['jid'],
-                    #                                                           ifrom=self.boundjid)
+					# except IqError as e:
+					#    logging.error(
+					#       "Could not get names of containers: %s" % e.iq['error']['text'])
 
-                    #    self.minions_pods = response['docker']['name'].split(
-                    #        ',')
-                    #    logging.info("Pods in %s: %s" %
-                    #                 (presence['muc']['jid'], self.minions_pods))
+				self.send_message(mto=presence['from'].bare,
+								  mbody="Ola Trouxa, %s %s" % (
+									  presence['muc']['role'], presence['muc']['nick']),
+								  mtype='groupchat')
 
-                    # except IqError as e:
-                    #    logging.error(
-                    #       "Could not get names of containers: %s" % e.iq['error']['text'])
+	def muc_offline(self, presence):
+		if presence['muc']['nick'] != self.nick:
+			if presence['muc']['nick'] in self.minions:
+				self.minions.remove(presence['muc']['nick'])
+				self.jid_minions.remove(presence['muc']['jid'])
+				del[presence['muc']['jid']]
 
-                self.send_message(mto=presence['from'].bare,
-                                  mbody="Ola Trouxa, %s %s" % (
-                                      presence['muc']['role'], presence['muc']['nick']),
-                                  mtype='groupchat')
+				print(self.jid_minions)
+				print("Minion Down")
+			else:
+				print("Application Down")
 
-    def muc_offline(self, presence):
-        if presence['muc']['nick'] != self.nick:
-            if presence['muc']['nick'] in self.minions:
-                self.minions.remove(presence['muc']['nick'])
-                self.jid_minions.remove(presence['muc']['jid'])
-                del[presence['muc']['jid']]
-
-                print("Minion Down")
-            else:
-                print("Application Down")
-
-            print(presence['muc']['nick'])
+			print(presence['muc']['nick'])
 
 
 if __name__ == '__main__':
-    optp = OptionParser()
+	optp = OptionParser()
 
-    optp.add_option('-q', '--quiet', help='set logging to ERROR',
-                    action='store_const', dest='loglevel',
-                    const=logging.ERROR, default=logging.INFO)
+	optp.add_option('-q', '--quiet', help='set logging to ERROR',
+					action='store_const', dest='loglevel',
+					const=logging.ERROR, default=logging.INFO)
 
-    optp.add_option('-d', '--debug', help='set logging to DEBUG',
-                    action='store_const', dest='loglevel',
-                    const=logging.DEBUG, default=logging.INFO)
+	optp.add_option('-d', '--debug', help='set logging to DEBUG',
+					action='store_const', dest='loglevel',
+					const=logging.DEBUG, default=logging.INFO)
 
-    optp.add_option('-v', '--verbose', help='set logging to COMM',
-                    action='store_const', dest='loglevel',
-                    const=5, default=logging.INFO)
+	optp.add_option('-v', '--verbose', help='set logging to COMM',
+					action='store_const', dest='loglevel',
+					const=5, default=logging.INFO)
 
-    opts, args = optp.parse_args()
-    logging.basicConfig(level=opts.loglevel,
-                        format='%(levelname)-8s %(message)s')
+	opts, args = optp.parse_args()
+	logging.basicConfig(level=opts.loglevel,
+						format='%(levelname)-8s %(message)s')
 
-    xmpp = Zeus('zeus@localhost', 'totvs@123')
-    xmpp.register_plugin('xep_0030')  # Service Discovery
-    xmpp.register_plugin('xep_0004')  # Data Forms
-    xmpp.register_plugin('xep_0059')
-    xmpp.register_plugin('xep_0060')  # PubSub
-    xmpp.register_plugin('xep_0045')
-    xmpp.register_plugin('xep_0085')
-    xmpp.register_plugin('xep_0071')
-    xmpp.register_plugin('xep_0133')
-    xmpp.register_plugin('xep_0050')
-    xmpp.register_plugin('xep_0199')  # XMPP Ping
-    xmpp.register_plugin('xep_0066')  # Out-of-band Data
-    xmpp.register_plugin('docker')
-    # xmpp.register_plugin('xep_0077') # In-band Registratio
+	xmpp = Zeus('zeus@localhost', 'totvs@123')
+	xmpp.register_plugin('xep_0030')  # Service Discovery
+	xmpp.register_plugin('xep_0004')  # Data Forms
+	xmpp.register_plugin('xep_0059')
+	xmpp.register_plugin('xep_0060')  # PubSub
+	xmpp.register_plugin('xep_0045')
+	xmpp.register_plugin('xep_0085')
+	xmpp.register_plugin('xep_0071')
+	xmpp.register_plugin('xep_0133')
+	xmpp.register_plugin('xep_0050')
+	xmpp.register_plugin('xep_0199')  # XMPP Ping
+	xmpp.register_plugin('xep_0066')  # Out-of-band Data
+	xmpp.register_plugin('docker')
+	# xmpp.register_plugin('xep_0077') # In-band Registratio
 
-    # test_ns = 'http://jabber.org/protocol/chatstates'
-    # xmpp['xep_0030'].add_feature(test_ns)
+	# test_ns = 'http://jabber.org/protocol/chatstates'
+	# xmpp['xep_0030'].add_feature(test_ns)
 
-    # xmpp['xep_0077'].force_registration = True
+	# xmpp['xep_0077'].force_registration = True
 
-    if xmpp.connect(address=('172.16.95.111', 5222)):
-        # if xmpp.connect(address=('192.168.204.131', 5222)):
-        xmpp.process(block=True)
-        print("Done")
-    else:
-        print("Unable to connect.")
+	if xmpp.connect(address=('192.168.204.131', 5222)):
+		# if xmpp.connect(address=('192.168.204.131', 5222)):
+		xmpp.process(block=True)
+		print("Done")
+	else:
+		print("Unable to connect.")

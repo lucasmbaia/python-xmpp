@@ -26,6 +26,69 @@ class DOCKER(BasePlugin):
 
 		register_stanza_plugin(Iq, Docker)
 
+	def _send_request(self, ito=None, ifrom=None, action=None, timeout=None, elements=None):
+		iq = self.xmpp.Iq()
+
+		if action is not None:
+			iq['id'] = action + '-' + iq['id']
+
+		iq['type'] = 'get'
+		iq['to'] = ito
+		iq['from'] = ifrom
+
+		if elements is not None:
+			query = ET.Element('{jabber:iq:docker}query')
+
+			for key in elements.keys():
+				element = ET.Element(key)
+				element.text = elements[key]
+				query.append(element)
+
+			iq.append(query)
+		else:
+			iq['query'] = 'jabber:iq:docker'
+
+
+		iq.append(query)
+
+		return iq.send(now=True, timeout=timeout)
+
+	def _send_response(self, ito=None, ifrom=None, success=None, response=None, error=None, iq_response=None, element=None):
+		iq = self.xmpp.Iq()
+		iq['id'] = iq_response
+		iq['to'] = ito
+		iq['from'] = ifrom
+
+		if success:
+			query = ET.Element('{jabber:iq:docker}query')
+
+			if element is not None:
+				result = ET.Element(element)
+				result.text = response
+				query.append(result)
+
+			iq['type'] = 'result'
+			iq.append(query)
+		else:
+			iq['query'] = 'jabber:iq:docker'
+			iq['type'] = 'error'
+			iq['error'] = 'cancel'
+			iq['error']['text'] = unicode(error)
+
+		iq.send(now=True)
+
+	def request_action_container(self, container, action, ito=None, ifrom=None):
+		if not container:
+			raise Exception("Container name is required")
+
+		if not action:
+			raise Exception("Container action is required")
+
+		return self._send_request(ito=ito, ifrom=ifrom, action='action-container', elements={'name': container, 'action': action})
+
+	def response_action_container(self, iq_response=None, ito=None, ifrom=None, success=None, response=None, error=None):
+		self._send_response(ito=ito, ifrom=ifrom, success=success, response=response, error=error, iq_response=iq_response, element='message')
+
 	def request_get_name_pods(self, ito=None, ifrom=None):
 		iq = self.xmpp.Iq()
 		iq['id'] = 'name-pods'

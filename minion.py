@@ -31,431 +31,441 @@ from sleekxmpp.plugins.docker.stanza import Docker
 from sleekxmpp.plugins.docker.register import DOCKER
 
 if sys.version_info < (3, 0):
-    reload(sys)
-    sys.setdefaultencoding('utf8')
+	reload(sys)
+	sys.setdefaultencoding('utf8')
 else:
-    raw_input = input
+	raw_input = input
 
 
 class Minion(sleekxmpp.ClientXMPP):
-    def __init__(self, jid, password):
-        sleekxmpp.ClientXMPP.__init__(self, jid, password)
-        self.chat_minions = 'minions'
-        self.range_ports = range(10000, 10100)
-        self.hostname = socket.gethostname()
-        self.add_event_handler("session_start", self.start)
-        self.add_event_handler("message", self.message)
-        self.add_event_handler("name_pods", self._handler_docker)
-        self.docker_process = Channel(docker_process=True)
-        self.pod_deploy_start = []
-        self.channel_connections = {}
+	def __init__(self, jid, password):
+		sleekxmpp.ClientXMPP.__init__(self, jid, password)
+		self.chat_minions = 'minions'
+		self.range_ports = range(10000, 10100)
+		self.hostname = socket.gethostname()
+		self.add_event_handler("session_start", self.start)
+		self.add_event_handler("message", self.message)
+		self.add_event_handler("name_pods", self._handler_docker)
+		self.docker_process = Channel(docker_process=True)
+		self.pod_deploy_start = []
+		self.channel_connections = {}
 
-    def start(self, event):
-        self.send_presence()
-        self.get_roster()
-        global form
+	def start(self, event):
+		self.send_presence()
+		self.get_roster()
+		global form
 
-        self.room = 'minions@conference.localhost'
-        self.nick = self.boundjid.user
+		self.room = 'minions@conference.localhost'
+		self.nick = self.boundjid.user
 
-        try:
-            room_exist = self.plugin['xep_0030'].get_info(jid=self.room)
-        except IqError as e:
-            if e.condition == 'item-not-found':
-                self.plugin['xep_0045'].joinMUC(self.room,
-                                                self.nick,
-                                                wait=True)
+		try:
+			room_exist = self.plugin['xep_0030'].get_info(jid=self.room)
+		except IqError as e:
+			if e.condition == 'item-not-found':
+				self.plugin['xep_0045'].joinMUC(self.room,
+												self.nick,
+												wait=True)
 
-                form = self.plugin['xep_0045'].getRoomConfig(self.room)
-                form.set_values({'muc#roomconfig_persistentroom': 1,
-                                 'muc#roomconfig_passwordprotectedroom': 0,
-                                 'muc#roomconfig_publicroom': 1,
-                                 'muc#roomconfig_roomdesc': 'TESTE!'})
+				form = self.plugin['xep_0045'].getRoomConfig(self.room)
+				form.set_values({'muc#roomconfig_persistentroom': 1,
+								 'muc#roomconfig_passwordprotectedroom': 0,
+								 'muc#roomconfig_publicroom': 1,
+								 'muc#roomconfig_roomdesc': 'TESTE!'})
 
-                try:
-                    self.plugin['xep_0045'].configureRoom(self.room, form=form)
-                    logging.info("Chat room %s success created!" % self.room)
-                except IqError as e:
-                    logging.error("Could not create chat room: %s" %
-                                  e.iq['error']['text'])
+				try:
+					self.plugin['xep_0045'].configureRoom(self.room, form=form)
+					logging.info("Chat room %s success created!" % self.room)
+				except IqError as e:
+					logging.error("Could not create chat room: %s" %
+								  e.iq['error']['text'])
 
-                    self.disconnect()
-            else:
-                logging.error("Could not create chat room: %s" %
-                              e.iq['error']['text'])
+					self.disconnect()
+			else:
+				logging.error("Could not create chat room: %s" %
+							  e.iq['error']['text'])
 
-                self.disconnect()
-        else:
-            self.plugin['xep_0045'].joinMUC(self.room,
-                                            self.nick)
+				self.disconnect()
+		else:
+			self.plugin['xep_0045'].joinMUC(self.room,
+											self.nick)
 
-            logging.info("Chat room %s success created!" % self.room)
+			logging.info("Chat room %s success created!" % self.room)
 
-        self.add_event_handler("muc::%s::got_online" %
-                               self.room, self.muc_online)
+		self.add_event_handler("muc::%s::got_online" %
+							   self.room, self.muc_online)
 
-    def message(self, msg):
-        if msg['type'] in ('chat', 'normal'):
-            option = msg['body'].split()[0]
-            print(option)
+	def message(self, msg):
+		if msg['type'] in ('chat', 'normal'):
+			option = msg['body'].split()[0]
+			print(option)
 
-        if msg['type'] in ('groupchat', 'normal'):
-            print(msg['body'])
+		if msg['type'] in ('groupchat', 'normal'):
+			print(msg['body'])
 
-    def _handler_docker(self, iq):
-        if iq['id'] == 'name-pods':
-            try:
-                names = self._handler_name_containers()
-                self.plugin['docker'].response_get_name_pods(ito=iq['from'],
-                                                             ifrom=self.boundjid,
-                                                             success=True,
-                                                             response=','.join(str(s) for s in names))
-            except Exception as e:
-                self.plugin['docker'].response_get_name_pods(ito=iq['from'],
-                                                             ifrom=self.boundjid,
-                                                             success=False,
-                                                             error=unicode(e))
+	def _handler_docker(self, iq):
+		print(iq)
+		if iq['id'] == 'name-pods':
+			try:
+				names = self._handler_name_containers()
+				self.plugin['docker'].response_get_name_pods(ito=iq['from'],
+															 ifrom=self.boundjid,
+															 success=True,
+															 response=','.join(str(s) for s in names))
+			except Exception as e:
+				self.plugin['docker'].response_get_name_pods(ito=iq['from'],
+															 ifrom=self.boundjid,
+															 success=False,
+															 error=unicode(e))
 
-        if iq['id'] == 'total-pods':
-            try:
-                total = self._handler_total_containers()
-                self.plugin['docker'].response_total_pods(ito=iq['from'],
-                                                          ifrom=self.boundjid,
-                                                          success=True,
-                                                          response=total)
-            except Exception as e:
-                self.plugin['docker'].response_total_pods(ito=iq['from'],
-                                                          ifrom=self.boundjid,
-                                                          success=False,
-                                                          response=unicode(e))
+		if iq['id'] == 'total-pods':
+			try:
+				total = self._handler_total_containers()
+				self.plugin['docker'].response_total_pods(ito=iq['from'],
+														  ifrom=self.boundjid,
+														  success=True,
+														  response=total)
+			except Exception as e:
+				self.plugin['docker'].response_total_pods(ito=iq['from'],
+														  ifrom=self.boundjid,
+														  success=False,
+														  response=unicode(e))
 
-        if 'first-deploy' in iq['id']:
-            pod_name = iq['docker']['user']
-            key_etcd = iq['docker']['key']
-            application_name = iq['docker']['name']
+		if 'first-deploy' in iq['id']:
+			pod_name = iq['docker']['user']
+			key_etcd = iq['docker']['key']
+			application_name = iq['docker']['name']
 
-            # self.pod_deploy_start.append(pod_name)
-
-            #args = {'from': str(iq['from']), 'pod': str(pod_name), 'key': str(key_etcd), 'application_name': str(application_name)}
-
-            # self.channel_connections[pod_name] = Channel(server_process=self.docker_process,
-            #                                 pod_id=pod_name,
-            #                                 pod_args=args)
-
-            # self.channel_connections[pod_name].register(
-            # self.docker_process.public_address(), self._handler_check_deploy)
-
-            try:
-                result = self._handler_deploy(iq['from'],
-                                              iq['docker']['name'],
-                                              iq['docker']['key'],
-                                              iq['docker']['user'],
+			try:
+				result = self._handler_deploy(iq['from'],
+											  iq['docker']['name'],
+											  iq['docker']['key'],
+											  iq['docker']['user'],
 											  iq['id'])
 
-            except Exception as e:
-                self.plugin['docker'].response_first_deploy(ito=iq['from'],
-                                                            ifrom=self.boundjid,
+			except Exception as e:
+				self.plugin['docker'].response_first_deploy(ito=iq['from'],
+															ifrom=self.boundjid,
 															iq_id=iq['id'],
-                                                            success=False,
-                                                            error=unicode(e))
-                # self.channel_connections[pod_name].close()
+															success=False,
+															error=unicode(e))
 
-    def _handler_deploy(self, ifrom, name, key, user, iq_id):
-        ports_service = []
-        etcd_conn = Etcd('172.16.95.183', 2379)
+		if 'action-container' in iq['id']:
+			container = iq['docker']['name']
+			action = iq['docker']['action']
 
-        try:
-            values = ast.literal_eval(etcd_conn.read(key))
-        except Exception as e:
-            return Exception(e)
+			if action == "resume":
+				action = "unpause"
 
-        # if 'port_dst' in values:
-        #    print(values['port_dst'])
-        #    try:
-        #    	ports = self.list_ports()
+			try:
+				response = self._exec_action_container(action, container)
+				self.plugin['docker'].response_action_container(iq_response=iq['id'],
+																ito=iq['from'],
+																ifrom=self.boundjid,
+																success=True,
+																response=container)
+			except Exception as e:
+				self.plugin['docker'].response_action_container(iq_response=iq['id'],
+																ito=iq['from'],
+																ifrom=self.boundjid,
+																success=False,
+																error=unicode(e))
 
-        #	for x in range(len(values['port_dst'])):
-        #	    for port in self.range_ports:
-        #		if str(port) not in ports:
-        #		    ports_service.append(str(port) + ':' + values[x])
-        #		    break
+	def _exec_action_container(self, action, container):
+		command = ['docker', action, container]
 
-        #    except Exception as e:
-        #	raise Exception(e)
+		try:
+			return self.exec_command(command)
+		except Exception as e:
+			raise Exception(e)
 
-        try:
-            command = self.docker_command(
-                name, key, user, ports_service, values)
-        except Exception as e:
-            return Exception(e)
+	def _handler_deploy(self, ifrom, name, key, user, iq_id):
+		ports_service = []
+		etcd_conn = Etcd('192.168.204.128', 2379)
 
-        self.pod_deploy_start.append(user)
-        args = {'from': str(ifrom), 'pod': str(user), 'key': str(key), 'application_name': str(name), 'iq_id': str(iq_id)}
-        self.channel_connections[user] = Channel(server_process=self.docker_process,
-                                                 pod_id=user,
-                                                 pod_args=args)
+		try:
+			values = ast.literal_eval(etcd_conn.read(key))
+		except Exception as e:
+			return Exception(e)
 
-        self.channel_connections[user].register(
-            self.docker_process.public_address(), self._handler_check_deploy)
+		try:
+			command = self.docker_command(
+				name, key, user, ports_service, values)
+		except Exception as e:
+			return Exception(e)
 
-        print(command)
-        try:
-            docker_process = subprocess.Popen(
-                command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-            (out, err) = docker_process.communicate()
+		self.pod_deploy_start.append(user)
+		args = {'from': str(ifrom), 'pod': str(user), 'key': str(key), 'application_name': str(name), 'iq_id': str(iq_id)}
+		self.channel_connections[user] = Channel(server_process=self.docker_process,
+												 pod_id=user,
+												 pod_args=args)
 
-            if out:
-                return out
-            if err:
-                self.channel_connections[user].close()
-                raise Exception(err.strip())
-        except OSError as e:
-            self.channel_connections[user].close()
-            raise Exception(e)
+		self.channel_connections[user].register(
+			self.docker_process.public_address(), self._handler_check_deploy)
 
-    def _handler_check_deploy(self, event):
-        #print(event)
-        dic_event = json.loads(event)
-        pod = None
+		print(command)
+		try:
+			docker_process = subprocess.Popen(
+				command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+			(out, err) = docker_process.communicate()
 
-        if 'pod' in dic_event['args']:
-            pod = dic_event['args']['pod']
+			if out:
+				return out
+			if err:
+				self.channel_connections[user].close()
+				raise Exception(err.strip())
+		except OSError as e:
+			self.channel_connections[user].close()
+			raise Exception(e)
 
-        def haproxy(pod, application_name):
-            ports = []
-            values = {}
-            etcd_conn = Etcd('172.16.95.183', 2379)
-            #command_address = ['docker', 'inspect', '-f', '"{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}"', pod]
-            command_ports = [
-                "docker", "inspect", "--format='{{range $p, $conf := .NetworkSettings.Ports}}{{$p}}:{{(index $conf 0).HostPort}}-{{end}}'", pod]
+	def _handler_check_deploy(self, event):
+		#print(event)
+		dic_event = json.loads(event)
+		pod = None
 
-            # try:
-            #ip_pod = self.exec_command(command_address).strip().replace("'", "")
-            # except Exception as e:
-            #raise Exception(e)
+		if 'pod' in dic_event['args']:
+			pod = dic_event['args']['pod']
 
-            try:
-                ports_pod = self.exec_command(
-                    command_ports).strip().replace("'", "")
-            except Exception as e:
-                raise Exception(e)
+		def haproxy(pod, application_name):
+			ports = []
+			values = {}
+			etcd_conn = Etcd('192.168.204.128', 2379)
+			#command_address = ['docker', 'inspect', '-f', '"{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}"', pod]
+			command_ports = [
+				"docker", "inspect", "--format='{{range $p, $conf := .NetworkSettings.Ports}}{{$p}}:{{(index $conf 0).HostPort}}-{{end}}'", pod]
 
-            if ports_pod:
-                p = ports_pod.split('-')
-                p.pop()
+			# try:
+			#ip_pod = self.exec_command(command_address).strip().replace("'", "")
+			# except Exception as e:
+			#raise Exception(e)
 
-                for x in p:
-                    ports.append(x.replace('/tcp', ''))
+			try:
+				ports_pod = self.exec_command(
+					command_ports).strip().replace("'", "")
+			except Exception as e:
+				raise Exception(e)
 
-            key_exists = etcd_conn.key_exists('/haproxy')
+			if ports_pod:
+				p = ports_pod.split('-')
+				p.pop()
 
-            if key_exists:
-                try:
-                    values = ast.literal_eval(etcd_conn.read('/haproxy'))
-                except Exception as e:
-                    raise Exception(e)
+				for x in p:
+					ports.append(x.replace('/tcp', ''))
 
-            if application_name in values:
-                values[application_name].append(
-                    {'address': self.hostname, 'ports': ports})
+			key_exists = etcd_conn.key_exists('/haproxy')
 
-            else:
-                values[application_name] = [
-                    {'address': self.hostname, 'ports': ports}]
+			if key_exists:
+				try:
+					values = ast.literal_eval(etcd_conn.read('/haproxy'))
+				except Exception as e:
+					raise Exception(e)
 
-            try:
-                etcd_conn.write('/haproxy', json.dumps(values))
-            except Exception as e:
-                raise Exception(e)
+			if application_name in values:
+				values[application_name].append(
+					{'address': self.hostname, 'ports': ports})
 
-            return True
+			else:
+				values[application_name] = [
+					{'address': self.hostname, 'ports': ports}]
 
-        def send_response(self, args, pod):
-            if pod is not None and pod in self.pod_deploy_start:
-                try:
-                    haproxy(pod, args['application_name'])
-                    self.plugin['docker'].response_first_deploy(ito=args['from'],
-                                                                ifrom=self.boundjid,
+			try:
+				etcd_conn.write('/haproxy', json.dumps(values))
+			except Exception as e:
+				raise Exception(e)
+
+			return True
+
+		def send_response(self, args, pod):
+			if pod is not None and pod in self.pod_deploy_start:
+				try:
+					haproxy(pod, args['application_name'])
+					self.plugin['docker'].response_first_deploy(ito=args['from'],
+																ifrom=self.boundjid,
 																iq_id=args['iq_id'],
-                                                                success=True,
-                                                                response='OK')
-                except Exception as e:
-                    self.plugin['docker'].response_first_deploy(ito=args['from'],
-                                                                ifrom=self.boundjid,
+																success=True,
+																response='OK')
+				except Exception as e:
+					self.plugin['docker'].response_first_deploy(ito=args['from'],
+																ifrom=self.boundjid,
 																iq_id=args['iq_id'],
-                                                                success=False,
-                                                                error=unicode(e))
+																success=False,
+																error=unicode(e))
 
-                self.pod_deploy_start.remove(pod)
-                self.channel_connections[pod].close()
+				self.pod_deploy_start.remove(pod)
+				self.channel_connections[pod].close()
 
-        if 'status' in dic_event['docker']:
-            if 'start' in dic_event['docker']['status']:
-                response = threading.Timer(
-                    10, send_response, [self, dic_event['args'], pod])
-                response.daemon = True
-                response.start()
+		if 'status' in dic_event['docker']:
+			if 'start' in dic_event['docker']['status']:
+				response = threading.Timer(
+					10, send_response, [self, dic_event['args'], pod])
+				response.daemon = True
+				response.start()
 
-            if 'die' in dic_event['docker']['status']:
-                if pod is not None:
-                    if pod in self.pod_deploy_start:
-                        self.pod_deploy_start.remove(pod)
+			if 'die' in dic_event['docker']['status']:
+				if pod is not None:
+					if pod in self.pod_deploy_start:
+						self.pod_deploy_start.remove(pod)
 
-                    self.plugin['docker'].response_first_deploy(ito=dic_event['args']['from'],
-                                                                ifrom=self.boundjid,
+					self.plugin['docker'].response_first_deploy(ito=dic_event['args']['from'],
+																ifrom=self.boundjid,
 																iq_id=dic_event['args']['iq_id'],
-                                                                success=False,
-                                                                error='Error to create ' + pod)
-                    self.channel_connections[pod].close()
+																success=False,
+																error='Error to create ' + pod)
+					self.channel_connections[pod].close()
 
-    def _handler_name_containers(self):
-        command = ['docker', 'ps', '--format', '"{{.Names}}"']
+	def _handler_name_containers(self):
+		command = ['docker', 'ps', '-a', '--format', '"{{.Names}}"']
 
-        try:
-            response = self.exec_command(command).split('\n')
-            return response[:1]
-        except Exception as e:
-            raise Exception(e)
+		try:
+			response = self.exec_command(command)
 
-    def _handler_total_containers(self):
-        command = ['docker', 'ps']
-        count = -1
+			if response is not None:
+				response = self.exec_command(command).split('\n')
+			else:
+				response = 'Not exists containers'
 
-        print(command)
-        try:
-            response = self.exec_command(command).split('\n')
+			return response
+		except Exception as e:
+			raise Exception(e)
 
-            for infos in response:
-                if len(infos.strip()) > 0:
-                    count += 1
+	def _handler_total_containers(self):
+		command = ['docker', 'ps']
+		count = -1
 
-            print(count)
-            return str(count)
-        except Exception as e:
-            raise Exception(e)
+		print(command)
+		try:
+			response = self.exec_command(command).split('\n')
 
-    def exec_command(self, command):
-        try:
-            process = subprocess.Popen(
-                command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-            (out, err) = process.communicate()
+			for infos in response:
+				if len(infos.strip()) > 0:
+					count += 1
 
-            if out:
-                return out
-            if err:
-                raise Exception(err.strip())
-        except OSError as e:
-            raise Exception(e)
+			print(count)
+			return str(count)
+		except Exception as e:
+			raise Exception(e)
 
-    def list_ports(self):
-        command = ['docker', 'ps', '--format', '"{{.Ports}}"']
-        ports = []
+	def exec_command(self, command):
+		try:
+			process = subprocess.Popen(
+				command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+			(out, err) = process.communicate()
 
-        try:
-            docker_process = subprocess.Popen(
-                command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-            (out, err) = docker_process.communicate()
+			if out:
+				return out
+			if err:
+				raise Exception(err.strip())
+		except OSError as e:
+			raise Exception(e)
 
-            if out:
-                response = out.split('\n')
+	def list_ports(self):
+		command = ['docker', 'ps', '--format', '"{{.Ports}}"']
+		ports = []
 
-                for infos in response:
-                    if len(infos.strip()) > 0:
-                        port = infos.split(':')[1].split('->')[0]
-                        ports.append(port)
+		try:
+			docker_process = subprocess.Popen(
+				command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+			(out, err) = docker_process.communicate()
 
-            if err:
-                raise Exception(err.strip())
-        except OSError as e:
-            raise Exception(e)
-        except:
-            raise Exception(sys.exc_info()[0])
+			if out:
+				response = out.split('\n')
 
-        return ports
+				for infos in response:
+					if len(infos.strip()) > 0:
+						port = infos.split(':')[1].split('->')[0]
+						ports.append(port)
 
-    def docker_command(self, hostname, endpoint, user_container, ports_service, values):
-        command = ['docker', 'run', '--rm']
+			if err:
+				raise Exception(err.strip())
+		except OSError as e:
+			raise Exception(e)
+		except:
+			raise Exception(sys.exc_info()[0])
 
-        if 'args' in values:
-            for x in values['args']:
-                command.append('--env')
-                command.append(x + '=' + values['args'][x])
+		return ports
 
-        if 'ports_dst' in values:
-            command.append('-P')
-            for x in values['ports_dst']:
-                command.append('--expose=' + x)
+	def docker_command(self, hostname, endpoint, user_container, ports_service, values):
+		command = ['docker', 'run', '--rm']
 
-        command.append('--name')
-        command.append(user_container)
+		if 'args' in values:
+			for x in values['args']:
+				command.append('--env')
+				command.append(x + '=' + values['args'][x])
 
-        if 'cpus' in values:
-            command.append('--cpus=' + values['cpus'])
-        if 'memory' in values:
-            command.append('--memory=' + values['memory'])
-        if 'image' in values:
-            command.append('-d')
-            command.append(values['image'])
-        else:
-            raise Exception("image is empty")
+		if 'ports_dst' in values:
+			command.append('-P')
+			for x in values['ports_dst']:
+				command.append('--expose=' + x)
 
-        return command
+		command.append('--name')
+		command.append(user_container)
 
-    def muc_online(self, presence):
-        if len(presence['muc']['nick'].strip()) > 0:
-            if presence['muc']['nick'] != self.nick:
-                self.send_message(mto=presence['from'].bare,
-                                  mbody="Ola Trouxa, %s %s" % (
-                    presence['muc']['role'], presence['muc']['nick']),
-                    mtype='groupchat')
+		if 'cpus' in values:
+			command.append('--cpus=' + values['cpus'])
+		if 'memory' in values:
+			command.append('--memory=' + values['memory'])
+		if 'image' in values:
+			command.append('-d')
+			command.append(values['image'])
+		else:
+			raise Exception("image is empty")
 
-    def muc_offline(self, presence):
-        if presence['muc']['nick'] != self.nick:
-            if presence['muc']['nick'] in self.minions:
-                print("Minion Down")
-            else:
-                print("Application Down")
+		return command
 
-            print(presence['muc']['nick'])
+	def muc_online(self, presence):
+		if len(presence['muc']['nick'].strip()) > 0:
+			if presence['muc']['nick'] != self.nick:
+				self.send_message(mto=presence['from'].bare,
+								  mbody="Ola Trouxa, %s %s" % (
+					presence['muc']['role'], presence['muc']['nick']),
+					mtype='groupchat')
+
+	def muc_offline(self, presence):
+		if presence['muc']['nick'] != self.nick:
+			if presence['muc']['nick'] in self.minions:
+				print("Minion Down")
+			else:
+				print("Application Down")
+
+			print(presence['muc']['nick'])
 
 
 if __name__ == '__main__':
-    optp = OptionParser()
+	optp = OptionParser()
 
-    optp.add_option('-q', '--quiet', help='set logging to ERROR',
-                    action='store_const', dest='loglevel',
-                    const=logging.ERROR, default=logging.INFO)
+	optp.add_option('-q', '--quiet', help='set logging to ERROR',
+					action='store_const', dest='loglevel',
+					const=logging.ERROR, default=logging.INFO)
 
-    optp.add_option('-d', '--debug', help='set logging to DEBUG',
-                    action='store_const', dest='loglevel',
-                    const=logging.DEBUG, default=logging.INFO)
+	optp.add_option('-d', '--debug', help='set logging to DEBUG',
+					action='store_const', dest='loglevel',
+					const=logging.DEBUG, default=logging.INFO)
 
-    optp.add_option('-v', '--verbose', help='set logging to COMM',
-                    action='store_const', dest='loglevel',
-                    const=5, default=logging.INFO)
+	optp.add_option('-v', '--verbose', help='set logging to COMM',
+					action='store_const', dest='loglevel',
+					const=5, default=logging.INFO)
 
-    opts, args = optp.parse_args()
-    logging.basicConfig(level=opts.loglevel,
-                        format='%(levelname)-8s %(message)s')
+	opts, args = optp.parse_args()
+	logging.basicConfig(level=opts.loglevel,
+						format='%(levelname)-8s %(message)s')
 
-    xmpp = Minion('minion-1@localhost', 'totvs@123')
-    xmpp.register_plugin('xep_0030')  # Service Discovery
-    xmpp.register_plugin('xep_0004')  # Data Forms
-    xmpp.register_plugin('xep_0059')
-    xmpp.register_plugin('xep_0060')  # PubSub
-    xmpp.register_plugin('xep_0045')
-    xmpp.register_plugin('xep_0085')
-    xmpp.register_plugin('xep_0071')
-    xmpp.register_plugin('xep_0199')  # XMPP Ping
-    xmpp.register_plugin('xep_0066')  # Out-of-band Data
-    xmpp.register_plugin('docker')
+	xmpp = Minion('minion-1@localhost', 'totvs@123')
+	xmpp.register_plugin('xep_0030')  # Service Discovery
+	xmpp.register_plugin('xep_0004')  # Data Forms
+	xmpp.register_plugin('xep_0059')
+	xmpp.register_plugin('xep_0060')  # PubSub
+	xmpp.register_plugin('xep_0045')
+	xmpp.register_plugin('xep_0085')
+	xmpp.register_plugin('xep_0071')
+	xmpp.register_plugin('xep_0199')  # XMPP Ping
+	xmpp.register_plugin('xep_0066')  # Out-of-band Data
+	xmpp.register_plugin('docker')
 
-    # test_ns = 'http://jabber.org/protocol/chatstates'
-    # xmpp['xep_0030'].add_feature(test_ns)
+	# test_ns = 'http://jabber.org/protocol/chatstates'
+	# xmpp['xep_0030'].add_feature(test_ns)
 
-    if xmpp.connect(address=('172.16.95.111', 5222)):
-        # if xmpp.connect(address=('172.16.95.111', 5222)):
-        xmpp.process(block=True)
-        print("Done")
-    else:
-        print("Unable to connect.")
+	if xmpp.connect(address=('192.168.204.131', 5222)):
+		# if xmpp.connect(address=('172.16.95.111', 5222)):
+		xmpp.process(block=True)
+		print("Done")
+	else:
+		print("Unable to connect.")

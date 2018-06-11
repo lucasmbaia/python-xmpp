@@ -1,47 +1,53 @@
 package main
 
 import (
-  "net/http"
-  "fmt"
-  "log"
-  "io/ioutil"
+	"fmt"
+	"io/ioutil"
+	"log"
+	"net/http"
 )
 
-func main() {
-  done := make(chan bool, 1)
+func request(url string) {
+	for i := 0; i < 10; i++ {
+		go func() {
+			for {
+				resp, err := http.Get(url)
 
-  for i := 0; i < 10; i++ {
-    go func(){
-      for {
-	resp, err := http.Get("http://lucas-dev.forcloudy.com")
+				if err != nil {
+					log.Fatal(err)
+				}
 
-	if err != nil {
-	  log.Fatal(err)
+				defer resp.Body.Close()
+
+				body, err := ioutil.ReadAll(resp.Body)
+
+				fmt.Println(string(body))
+			}
+		}()
 	}
+}
 
-	defer resp.Body.Close()
+func main() {
+	done := make(chan bool, 1)
 
-	body, err := ioutil.ReadAll(resp.Body)
+	request("http://192.168.204.132:32768")
+	request("http://192.168.204.132:32769")
+	request("http://192.168.204.132:32770")
 
-	fmt.Println(string(body))
-      }
-    }()
-  }
+	<-done
+	/*for {
+		resp, err := http.Get("http://lucas-dev.forcloudy.com")
 
-  <-done
-  /*for {
-    resp, err := http.Get("http://lucas-dev.forcloudy.com")
+		if err != nil {
+			log.Fatal(err)
+		}
 
-    if err != nil {
-      log.Fatal(err)
-    }
+		defer resp.Body.Close()
 
-    defer resp.Body.Close()
+		body, err := ioutil.ReadAll(resp.Body)
 
-    body, err := ioutil.ReadAll(resp.Body)
-
-    fmt.Println(string(body))
-    count++
-    fmt.Println(count)
-  }*/
+		fmt.Println(string(body))
+		count++
+		fmt.Println(count)
+	}*/
 }
