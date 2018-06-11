@@ -1,0 +1,22 @@
+#!/bin/bash
+
+PATH=/sbin:/usr/sbin:$PATH
+PRODUCER="kafka-producer"
+
+for dir in $(echo $PATH | tr ":" "\n"); do
+    echo {$dir}/{$PRODUCER}
+    if [ -f $dir/$PRODUCER ]; then
+	echo "EXISTS"
+    fi
+done
+#case $1 in
+#start)
+    if [ -f {$PATH}/{$PRODUCER} ]; then
+	echo "EXISTS"
+    else
+	echo "PORRA"
+    fi
+echo $PATH/"$PRODUCER"
+#case "$1" in
+#start)
+

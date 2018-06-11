@@ -1,15 +1,10 @@
-FROM golang
-MAINTAINER container
+FROM golang:1.8 as build
 RUN mkdir /app
-#RUN pip install --no-cache-dir pycrypto
-#RUN pip install --no-cache-dir python-etcd
-#RUN pip install --no-cache-dir sleekxmpp
-#ADD container.py /app
-#ADD etcdf.py /app
-#ADD crypt.py /app
 ADD hello_world /app
-#Add id_rsa /app
-WORKDIR /app
-EXPOSE 8080
-#CMD ["python", "./container.py"]
-CMD ["/app/hello_world"]
+
+FROM alpine:latest
+RUN mkdir /application
+COPY --from=build /app /application
+WORKDIR /application
+#EXPOSE 8080
+#CMD ["./hello_world"]
