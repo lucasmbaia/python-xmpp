@@ -89,6 +89,22 @@ class DOCKER(BasePlugin):
 	def response_action_container(self, iq_response=None, ito=None, ifrom=None, success=None, response=None, error=None):
 		self._send_response(ito=ito, ifrom=ifrom, success=success, response=response, error=error, iq_response=iq_response, element='message')
 
+	def request_generate_image(self, path, name, key, ito=None, ifrom=None):
+		if not path:
+			raise Exception("Path of exec is required")
+
+		if not name:
+			raise Exception("Name of image is required")
+
+		if not key:
+			raise Exception("Key of etcd is required")
+
+		return self._send_request(ito=ito, ifrom=ifrom, action='generate-image', timeout=120, elements={'path': path, 'name': name, 'key': key})
+
+	def response_generate_image(self, iq_response=None, ito=None, ifrom=None, success=None, response=None, error=None):
+		print(success, response, error)
+		self._send_response(ito=ito, ifrom=ifrom, success=success, response=response, error=error, iq_response=iq_response, element='message')
+
 	def request_get_name_pods(self, ito=None, ifrom=None):
 		iq = self.xmpp.Iq()
 		iq['id'] = 'name-pods'

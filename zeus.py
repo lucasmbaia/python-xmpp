@@ -223,6 +223,11 @@ class Zeus(sleekxmpp.ClientXMPP):
 			self._handler_send_message(msg['from'], unicode(e))
 
 		if len(self.minions) == 1:
+			try:
+				self._generate_image(path='/root/python-xmpp/go/hello_world/hello_world', name=hostname, key=endpoint, ito=self.jid_minions[0])
+			except Exception as e:
+				self._handler_send_message(msg['from'], unicode(e))
+
 			for number in range(pods):
 				application_name = hostname + "-" + str(number)
 
@@ -245,6 +250,11 @@ class Zeus(sleekxmpp.ClientXMPP):
 			iterator = 0
 			keys = minions_pods.keys()
 
+			try:
+				self._generate_image(path='/root/python-xmpp/go/hello_world/hello_world', name=hostname, key=endpoint, ito=keys[0])
+			except Exception as e:
+				self._handler_send_message(msg['from'], unicode(e))
+
 			for key in keys:
 				thread_start_deploy = threading.Thread(target=start_deploy,
 													   args=[self, key, minions_pods[key], iterator, endpoint, hostname, msg['from']])
@@ -253,14 +263,19 @@ class Zeus(sleekxmpp.ClientXMPP):
 
 				iterator += minions_pods[key]
 
-				# for number in range(minions_pods[key]):
-				#    application_name = hostname + "-" + str(iterator)
-				#    iterator += 1
+	def _generate_image(self, path, name, key, ito):
+		print(path, name, key, ito)
+		try:
+			self.plugin['docker'].request_generate_image(path=path,
+														name=name,
+														key=key,
+														ito=ito,
+														ifrom=self.boundjid)
+		except IqError as e:
+			raise Exception(e.iq['error']['text'])
+		except IqTimeout as t:
+			raise Exception("timeout generate image")
 
-				#    thread_deploy_minion = threading.Thread(target=self._requet_deploy_to_minion, args=[
-				#                                            key, hostname, endpoint, application_name, msg['from']])
-				#    thread_deploy_minion.daemon = True
-				#    thread_deploy_minion.start()
 
 	def _requet_deploy_to_minion(self, ito, hostname, endpoint, application_name, ifrom):
 		try:
@@ -391,9 +406,10 @@ class Zeus(sleekxmpp.ClientXMPP):
 			if "--ports" in value:
 				ports = value.strip().replace("--ports=", "").strip().split(',')
 				values_etcd['ports_dst'] = ports
-			if "--image" in value:
-				values_etcd['image'] = value.replace("--image=", "").strip()
+			#if "--image" in value:
+				#values_etcd['image'] = value.replace("--image=", "").strip()
 
+		values_etcd['image'] = 'registry:5000/' + hostname + '/image:v1'
 		return hostname, customer, pods, values_etcd
 
 	def deploy(self, msg):

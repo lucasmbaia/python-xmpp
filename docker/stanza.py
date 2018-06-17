@@ -7,7 +7,7 @@ class Docker(ElementBase):
 	name = 'query'
 	plugin_attrib = 'docker'
 	interfaces = set(('name', 'total', 'action', 'message',
-										'deploy', 'name', 'key', 'user'))
+										'deploy', 'name', 'key', 'user', 'path'))
 	sub_interfaces = interfaces
 	form_fields = set(('name', 'total', 'action', 'message',
-										'deploy', 'name', 'key', 'user'))
+										'deploy', 'name', 'key', 'user', 'path'))

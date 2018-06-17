@@ -8,6 +8,7 @@ import socket
 from optparse import OptionParser
 import threading
 import json
+import time
 
 import sleekxmpp
 import ast
@@ -170,6 +171,121 @@ class Minion(sleekxmpp.ClientXMPP):
 																success=False,
 																error=unicode(e))
 
+		if 'generate-image' in iq['id']:
+			path = iq['docker']['path']
+			image_name = iq['docker']['name']
+			key = iq['docker']['key']
+
+			try:
+				response = self._generate_image(path=path, image_name=image_name, key=key, iq_response=iq['id'], ifrom=iq['from'])
+				#self.plugin['docker'].response_generate_image(iq_response=iq['id'],
+				#											ito=iq['from'],
+				#											ifrom=self.boundjid,
+				#											success=True,
+				#											response=image_name)
+			
+			except Exception as e:
+				self.plugin['docker'].response_generate_image(iq_response=iq['id'],
+															ito=iq['from'],
+															ifrom=self.boundjid,
+															success=False,
+															error=unicode(e))
+
+
+	def _generate_image(self, path, image_name, key, iq_response, ifrom):
+		command = ['docker', 'run', '-t', '-i', '--rm']
+		etcd_conn = Etcd('192.168.204.128', 2379)
+
+		try:
+			values = ast.literal_eval(etcd_conn.read(key))
+		except Exception as e:
+			raise Exception(e)
+
+		if 'args' in values:
+			for x in values['args']:
+				command.append('--env')
+				command.append(x + '=' + values['args'][x])
+
+		if 'ports_dst' in values:
+			command.append('-P')
+			for x in values['ports_dst']:
+				command.append('--expose=' + x)
+
+		command.append('--name')
+		command.append(image_name)
+
+		command.append('--cpus=0.1')
+		command.append('--memory=15m')
+		command.append('-d')
+		command.append('alpine')
+
+		self.pod_deploy_start.append(image_name)
+		args = {'from': str(ifrom), 'container': str(image_name), 'path': str(path), 'from': str(ifrom), 'iq_response': str(iq_response)}
+		self.channel_connections[image_name] = Channel(server_process=self.docker_process,
+													pod_id=image_name,
+													pod_args=args)
+
+		self.channel_connections[image_name].register(self.docker_process.public_address(), self._handler_check_generate_image)
+
+		print(command)
+		try:
+			response = self.exec_command(command)
+		except Exception as e:
+			self.channel_connections[image_name].close()
+			raise Exception(e)
+
+	def _handler_check_generate_image(self, event):
+		dic_event = json.loads(event)
+		container = None
+
+		print(dic_event)
+		if 'container' in dic_event['args']:
+			container = dic_event['args']['container']
+
+		def basic_commands(container, path):
+			command = ['/usr/bin/sh', 'generate_image.sh', container, path, 'v1']
+
+			try:
+				self.exec_command(command)
+			except Exception as e:
+				raise Exception(e)
+
+
+		def check_image(self, args, container):
+			if container is not None and container in self.pod_deploy_start:
+				try:
+					basic_commands(container, args['path'])
+					self.plugin['docker'].response_generate_image(iq_response=args['iq_response'],
+																ito=args['from'],
+																ifrom=self.boundjid,
+																success=True,
+																response=container)
+				except Exception as e:
+					print("ERRO PORRA", e)
+					self.plugin['docker'].response_generate_image(iq_response=args['iq_response'],
+																ito=args['from'],
+																ifrom=self.boundjid,
+																success=False,
+																error=unicode(e))
+
+		if 'status' in dic_event['docker']:
+			if dic_event['docker']['status'] == 'start':
+				response = threading.Timer(5, check_image, [self, dic_event['args'], container])
+				response.daemon = True
+				response.start()
+
+			if 'die' in dic_event['docker']['status']:
+				if container is not None:
+					if container in self.pod_deploy_start:
+						self.pod_deploy_start.remove(container)
+
+					self.plugin['docker'].response_generate_image(iq_response=dic_event['args']['iq_response'],
+																ito=dic_event['args']['from'],
+																ifrom=self.boundjid,
+																success=False,
+																error=unicode(e))
+					self.channel_connections[container].close()
+																
 	def _exec_action_container(self, action, container):
 		command = ['docker', action, container]
 
@@ -448,7 +564,7 @@ if __name__ == '__main__':
 	logging.basicConfig(level=opts.loglevel,
 						format='%(levelname)-8s %(message)s')
 
-	xmpp = Minion('minion-1@localhost', 'totvs@123')
+	xmpp = Minion('minion-2@localhost', 'totvs@123')
 	xmpp.register_plugin('xep_0030')  # Service Discovery
 	xmpp.register_plugin('xep_0004')  # Data Forms
 	xmpp.register_plugin('xep_0059')
