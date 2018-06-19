@@ -81,19 +81,20 @@ class Etcd:
 			raise Exception("Key %s not present anymore" % endpoint)
 
 if __name__ == '__main__':
-	p = Etcd('192.168.204.128', 2379)
+	p = Etcd('172.16.95.183', 2379)
 
 	print("TOMA NO SEU CU")
 	#d = [{"name": "app", "ips": ["10.10.1.1"], "port": 80}]
-	d = {'app': {'ips':['10.10.1.1'], 'portSRC': '80', 'portDST': '8080'}}
+	d = {'hosts': [{'protocol': 'http', 'portSRC': '80', 'address': ['127.0.0.1:80', '127.0.0.2:80']},{'protocol': 'https', 'portSRC': '443', 'address': ['127.0.0.1:443', '127.0.0.2:443']},{'protocol': 'tcp', 'portSRC': '5340', 'address': ['127.0.0.1:5340', '127.0.0.2:5340']}], 'dns': 'lucas.com.br'}
+	#d = {'app': {'ips':['10.10.1.1'], 'portSRC': '80', 'portDST': '8080'}}
 	try:
 		#p.write('/python/app', {'app': {'ips':['10.10.1.1']}})
-		p.write('/python/app', json.dumps(d))
+		p.write('/haproxy/pepeca', json.dumps(d))
 	except Exception as e:
 		print(e)
 
 	try:
-		val = p.read('/python/app')
+		val = p.read('/haproxy/pepeca')
 	except Exception as e:
 		print(e)
 
