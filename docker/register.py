@@ -114,6 +114,16 @@ class DOCKER(BasePlugin):
         self._send_response(ito=ito, ifrom=ifrom, success=success, response=response,
                             error=error, iq_response=iq_response, element='message')
 
+    def request_load_image(self, path, ito=None, ifrom=None):
+	if not path:
+	    raise Exception("Path of exec is required")
+
+	return self._send_request(ito=ito, ifrom=ifrom, action='load-image', timeout=120, elements={'path': path})
+
+    def response_load_image(self, iq_response=None, ito=None, ifrom=None, success=None, response=None, error=None):
+        self._send_response(ito=ito, ifrom=ifrom, success=success, response=response,
+                            error=error, iq_response=iq_response, element='message')
+
     def request_get_name_pods(self, ito=None, ifrom=None):
         iq = self.xmpp.Iq()
         iq['id'] = 'name-pods'

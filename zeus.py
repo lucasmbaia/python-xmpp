@@ -261,6 +261,13 @@ class Zeus(sleekxmpp.ClientXMPP):
             except Exception as e:
                 self._handler_send_message(msg['from'], unicode(e))
 
+	    print(keys[1:])
+	    for key in keys[1:]:
+		try:
+		    self._load_image(path='/teste5/' + hostname + '.tar.gz', ito=key)
+		except Exception as e:
+		    self._handler_send_message(msg['from'], unicode(e))
+
             for key in keys:
                 thread_start_deploy = threading.Thread(target=start_deploy,
                                                        args=[self, key, minions_pods[key], iterator, endpoint, hostname, msg['from']])
@@ -281,6 +288,16 @@ class Zeus(sleekxmpp.ClientXMPP):
             raise Exception(e.iq['error']['text'])
         except IqTimeout as t:
             raise Exception("timeout generate image")
+
+    def _load_image(self, path, ito):
+	try:
+	    self.plugin['docker'].request_load_image(path=path,
+						    ito=ito,
+						    ifrom=self.boundjid)
+	except IqError as e:
+	    raise Exception(e.iq['error']['text'])
+	except IqTimeout as t:
+	    raise Exception("timeout load image")
 
     def _requet_deploy_to_minion(self, ito, hostname, endpoint, application_name, ifrom):
         try:
@@ -414,7 +431,7 @@ class Zeus(sleekxmpp.ClientXMPP):
             # if "--image" in value:
                 #values_etcd['image'] = value.replace("--image=", "").strip()
 
-        values_etcd['image'] = 'localhost:5000/' + hostname + '/image:v1'
+        values_etcd['image'] = hostname + '/image:v1'
         return hostname, customer, pods, values_etcd
 
     def deploy(self, msg):

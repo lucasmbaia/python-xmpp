@@ -177,20 +177,46 @@ class Minion(sleekxmpp.ClientXMPP):
             key = iq['docker']['key']
 
             try:
-                response = self._generate_image(
-                    path=path, image_name=image_name, key=key, iq_response=iq['id'], ifrom=iq['from'])
-                # self.plugin['docker'].response_generate_image(iq_response=iq['id'],
-                #											ito=iq['from'],
-                #											ifrom=self.boundjid,
-                #											success=True,
-                #											response=image_name)
-
+                response = self._generate_image(path=path, image_name=image_name, key=key, iq_response=iq['id'], ifrom=iq['from'])
             except Exception as e:
                 self.plugin['docker'].response_generate_image(iq_response=iq['id'],
                                                               ito=iq['from'],
                                                               ifrom=self.boundjid,
                                                               success=False,
                                                               error=unicode(e))
+
+	if 'load-image' in iq['id']:
+	    path = iq['docker']['path']
+
+	    try:
+		response = self._load_image(path=path)
+
+		self.plugin['docker'].response_load_image(iq_response=iq['id'],
+							ito=iq['from'],
+							ifrom=self.boundjid,
+							success=True,
+							response=path)
+	    except Exception as e:
+		self.plugin['docker'].response_load_image(iq_response=iq['id'],
+							ito=iq['from'],
+							ifrom=self.boundjid,
+							success=False,
+							error=unicode(e))
+
+    def _load_image(self, path):
+	infos = path.split('/')
+	image = infos[len(infos) - 1:][0].split('.')[0]
+
+	try:
+	    exists = self._handler_exists_image(image)
+	except Exception as e:
+	    raise Exception(e)
+
+	if exists is False:
+	    try:
+		self._handler_load_image(path)
+	    except Exception as e:
+		raise Exception(e)
 
     def _generate_image(self, path, image_name, key, iq_response, ifrom):
         command = ['docker', 'run', '-t', '-i', '--rm']
@@ -246,7 +272,7 @@ class Minion(sleekxmpp.ClientXMPP):
 
         def basic_commands(container, path):
             command = ['/usr/bin/sh', 'generate_image.sh',
-                       container, path, 'v1']
+                       container, path, 'v1', 'hello_world']
 
 	    print("GENERATE IMAGE")
 	    print(command)
@@ -306,13 +332,29 @@ class Minion(sleekxmpp.ClientXMPP):
         try:
             values = ast.literal_eval(etcd_conn.read(key))
         except Exception as e:
-            return Exception(e)
+            raise Exception(e)
 
         try:
             command = self.docker_command(
                 name, key, user, ports_service, values)
         except Exception as e:
-            return Exception(e)
+            raise Exception(e)
+
+	#print("PORRA DE EXISTS IMAGE")
+	#try:
+	#    exists = self._handler_exists_image(values['image'])
+	#except Exception as e:
+	#    raise Exception(e)
+
+	#print("EXISTS")
+	#print(exists)
+	#if exists is False:
+	#    try:
+	#	self._handler_load_image('/teste5/' + name + '.tar.gz')
+	#	print("kkkk")
+	#    except Exception as e:
+	#	print("meu ovo", e)
+	#	raise Exception(e)
 
         self.pod_deploy_start.append(user)
         args = {'from': str(ifrom), 'pod': str(user), 'key': str(
@@ -399,7 +441,7 @@ class Minion(sleekxmpp.ClientXMPP):
         def send_response(self, args, pod):
             if pod is not None and pod in self.pod_deploy_start:
                 try:
-                    haproxy(pod, args['application_name'])
+                    #haproxy(pod, args['application_name'])
                     self.plugin['docker'].response_first_deploy(ito=args['from'],
                                                                 ifrom=self.boundjid,
                                                                 iq_id=args['iq_id'],
@@ -434,6 +476,32 @@ class Minion(sleekxmpp.ClientXMPP):
                                                                 error='Error to create ' + pod)
                     self.channel_connections[pod].close()
 
+    def _handler_exists_image(self, image):
+	command = ['docker', 'images', '--format', '"{{.Repository}}:{{.Tag}}"']
+
+	try:
+	    response = self.exec_command(command)
+
+	    if response is not None:
+		if image in response:
+		    return True
+		
+		return False
+	    else:
+		return False
+	except Exception as e:
+	    raise Exception(e)
+
+    def _handler_load_image(self, path):
+	command = ['docker', 'load', '--input', path]
+
+	print(command)
+	try:
+	    response = self.exec_command(command)
+	    print(response)
+	except Exception as e:
+	    raise Exception(e)
+	    
     def _handler_name_containers(self):
         command = ['docker', 'ps', '-a', '--format', '"{{.Names}}"']
 
@@ -570,7 +638,7 @@ if __name__ == '__main__':
     logging.basicConfig(level=opts.loglevel,
                         format='%(levelname)-8s %(message)s')
 
-    xmpp = Minion('minion-2@localhost', 'totvs@123')
+    xmpp = Minion('minion-1@localhost', 'totvs@123')
     xmpp.register_plugin('xep_0030')  # Service Discovery
     xmpp.register_plugin('xep_0004')  # Data Forms
     xmpp.register_plugin('xep_0059')
