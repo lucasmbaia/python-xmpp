@@ -22,7 +22,7 @@ MKDIR="docker exec -it $1 mkdir /app"
 BASH="docker exec -it $1 apk add --no-cache bash"
 CP="docker cp $2 $1:/app"
 COMMIT="docker commit --change='ENTRYPOINT [\"/app/$4\"]' $1 $1/image:$3"
-SAVE="docker save $1/image:$3 -o /teste5/$1.tar.gz"
+SAVE="docker save $1/image:$3 -o /images/$1.tar.gz"
 #TAG="docker tag $1/image:$3 localhost:5000/$1/image:$3"
 #PUSH="docker push localhost:5000/$1/image:$3"
 

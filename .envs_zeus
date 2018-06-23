@@ -1,0 +1,4 @@
+export etcd_url=192.168.204.128
+export xmpp_url=192.168.204.131
+export jid=zeus@localhost
+export path_images=/images/
