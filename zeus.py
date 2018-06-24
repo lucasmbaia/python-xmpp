@@ -11,6 +11,7 @@ import sleekxmpp
 import uuid
 import threading
 import os
+import ast
 
 from sleekxmpp.exceptions import IqError, IqTimeout
 from sleekxmpp.xmlstream.handler.callback import Callback
@@ -117,7 +118,10 @@ class Zeus(sleekxmpp.ClientXMPP):
 					target=self.first_deploy, args=[msg])
 				thread_deploy.daemon = True
 				thread_deploy.start()
-
+			elif option == "append":
+				thread_append = threading.Thread(target=self.append_containers, args=[msg])
+				thread_append.daemon = True
+				thread_append.start()
 			elif option == "create_room":
 				self.create_room(msg)
 			elif option == "stop" or option == "start" or option == "pause" or option == "resume":
@@ -153,6 +157,107 @@ class Zeus(sleekxmpp.ClientXMPP):
 						  mbody=custom_msg['body'],
 						  mhtml=custom_msg['html'],
 						  mtype='chat')
+
+	def _handler_deploy(self, iq):
+		logging.info('Receive iq request from: %s, iq: %s, args: %s' % (iq['from'], iq['id'], iq['docker']))
+
+		if 'master-first-deploy' in iq['id']:
+			args = iq['docker']
+
+			try:
+				response = self._first_deploy(args=args, iq_response=iq['id'], ifrom=iq['from'])
+			except Exception as e:
+				self.plugin['docker'].response_master_deploy(iq_response=iq['id'],
+															ito=iq['from'],
+															ifrom=self.boundjid,
+															sucess=False,
+															error=unicode(e))
+
+		if 'master-append-deploy' in iq['id']:
+			args = iq['docker']
+
+			try:
+				reponse = self._append_containers(args=args, iq_response=iq['id'], ifrom=iq['from'])
+			except Exception as e:
+				self.plugin['docker'].response_master_append_deploy(iq_response=iq['id'],
+																	ito=iq['from'],
+																	ifrom=self.boundjid,
+																	sucess=False,
+																	error=unicode(e))
+
+	def _first_deploy(self, args, iq_response, ifrom):
+		logging.info('Start First Deploy')
+
+		if len(self.minions) == 0:
+			raise Exception('Not have hosts to start the deploy')
+
+		values_etcd = {'cpus': args['cpus'], 'memory': args['memory'], 'ports_dst': args['ports'].strip().split(','), 'image': args['name'] + '/image:v1', 'total': args['total']}
+		key_application = '/' + args['customer'] + '/' + args['name']
+		
+		etcd_conn = Etcd(self.etcd_url, self.etcd_port)
+
+		try:
+			etcd_conn.write(key_application, values_etcd)
+		except Exception as e:
+			raise Exception(e)
+
+		try:
+			self._create_room(args['name'])
+		except Exception as e:
+			raise Exception(e)
+
+		try:
+			self._send_deploy_minion(args=args, iq_response=iq_response, ifrom=ifrom, key_application=key_application, first=True)
+		except Exception as e:
+			raise Exception(e)
+
+	def _append_containers(self, args, iq_response, ifrom):
+		print(args)
+
+	def _send_deploy_minion(self, args, iq_response, ifrom, key_application, first):
+		if len(self.minions) == 1:
+			if first:
+				try:
+					self._generate_image(path=args['path'], name=args['name'], key=key_application, ito=self.jid_minions[0])
+				except Exception as e:
+					raise Exception(e)
+
+			for number in range(int(args['total'])):
+				application_name = args['name'] + '-' + str(number)
+
+				thread_deploy_minion = threading.Thread(target=self._requet_deploy_to_minion, args=[self.jid_minions[0], args['name'], key_application, application_name, ifrom])
+				thread_deploy_minion.daemon = True
+				thread_deploy_minion.start()
+		else:
+			minions_containers = self._pods_containers(int(args['total']))
+			iterator = 0
+			keys_minions = minions_containers.keys()
+
+			if first:
+				try:
+					self._generate_image(path=args['path'], name=args['name'], key=key_application, ito=self.keys_minions[0])
+				except Exception as e:
+					raise Exception(e)
+
+				for minion in keys_minions[1:]:
+					try:
+						self._load_image(path=self.path_images + args['name'] + '.tar.gz', ito=minion)
+					except Exception as e:
+						raise Exception(e)
+
+			def start_deploy(self, minion, number, iterator, key_application, name, ifrom):
+				for n in range(number):
+					application_name = name + '-' + str(iterator)
+					iterator += 1
+
+					thread_deploy_minion = threading.Thread(target=self._requet_deploy_to_minion, args=[minion, name, key_application, application_name, ifrom])
+					thread_deploy_minion.daemon = True
+					thread_deploy_minion.start()
+
+			for minion in keys_minions:
+				thread_start_deploy = threading.Thread(target=start_deploy, args=[self, minion, minions_containers[minion], iterator, key_application, args['name'], ifrom])
+				thread_start_deploy.daemon = True
+				thread_start_deploy.start()
 
 	def get_number_containers(self, to):
 		try:
@@ -265,6 +370,84 @@ class Zeus(sleekxmpp.ClientXMPP):
 
 				iterator += minions_pods[key]
 
+	def append_containers(self, msg):
+		options = msg['body'].split('%')
+
+		if len(self.minions) == 0:
+			self._handler_send_message(msg['from'], "Not have hosts to start the deploy")
+			return
+
+		#if 'customer' not in options:
+		#	self._handler_send_message(msg['from'], "Customer is not informed")
+		#	return
+
+		#if 'name' not in options:
+		#	self._handler_send_message(msg['from'], "Name of application is not informed")
+		#	return
+
+		#if 'number' not in options:
+		#	self._handler_send_message(msg['from'], "Number of containers is not informed")
+		#	return
+
+		for option in options:
+			if 'customer' in option:
+				customer = option.replace('customer=', '').strip()
+			if 'name' in option:
+				name = option.replace('name=', '').strip()
+			if 'number' in option:
+				number_containers = option.replace('number=', '').strip()
+	
+		etcd_conn = Etcd(self.etcd_url, self.etcd_port)
+		key_customer = '/' + customer + '/' + name
+
+		if etcd_conn.key_exists(key_customer) is False:
+			self._handler_send_message(msg['from'], 'Application "' + name + '" is not exists')
+			return
+
+		try:
+			values = ast.literal_eval(etcd_conn.read(key_customer))
+		except Exception as e:
+			self._handler_send_message(msg['from'], unicode(e))
+			return
+
+		iterator = values['pods'] + 1
+
+		values['pods'] = values['pods'] + int(number_containers)
+
+		try:
+			etcd_conn.update(key_customer, values)
+		except Exception as e:
+			self._handler_send_message(msg['from'], unicode(e))
+			return
+
+		if len(self.minions) == 1:
+			for number in range(int(number_containers)):
+				application_name = name + '-' + str(iterator)
+				iterator += 1
+
+				thread_deploy_append_minion = threading.Thread(target=self._requet_deploy_to_minion, args=[self.jid_minions[0], name, key_customer, application_name, msg['from']])
+				thread_deploy_append_minion.daemon = True
+				thread_deploy_append_minion.start()
+		else:
+			def start_deploy(self, key, number, iterator, endpoint, hostname, ifrom):
+				for n in range(number):
+					application_name = hostname + "-" + str(iterator)
+					iterator += 1
+
+					thread_deploy_append_minion = threading.Thread(target=self._requet_deploy_to_minion, args=[key, hostname, endpoint, application_name, ifrom])
+					thread_deploy_append_minion.daemon = True
+					thread_deploy_append_minion.start()
+
+		minions_pods = self._pods_containers(int(number_containers))
+		keys = minions_pods.keys()
+
+		for key in keys:
+			thread_start_deploy = threading.Thread(target=start_deploy, args=[self, key, minions_pods[key], iterator, key_customer, name, msg['from']])
+			thread_start_deploy.daemon = True
+			thread_start_deploy.start()
+
+			iterator += minions_pods[key]
+
 	def _generate_image(self, path, name, key, ito):
 		print(path, name, key, ito)
 		try:
@@ -302,7 +485,7 @@ class Zeus(sleekxmpp.ClientXMPP):
 			self._handler_send_message(ifrom, e.iq['error']['text'])
 		except IqTimeout as t:
 			self._handler_send_message(
-				ifrom, 'timeout container' + application_name)
+				ifrom, 'timeout container ' + application_name)
 
 	def _pods_containers(self, pods):
 		minions_pods = {}

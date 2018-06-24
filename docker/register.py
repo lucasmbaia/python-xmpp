@@ -124,6 +124,55 @@ class DOCKER(BasePlugin):
         self._send_response(ito=ito, ifrom=ifrom, success=success, response=response,
                             error=error, iq_response=iq_response, element='message')
 
+	def resquet_master_deploy(self, customer, name_application, total_containers, ports, cpus, memory, path, ito, ifrom, args=None, timeout=None):
+		if not customer:
+			raise Exception("Customer of application is required")
+
+		if not name_application:
+			raise Exception("Name of application is required")
+
+		if not total_containers:
+			raise Exception("Total of containers is required")
+
+		if not cpus:
+			raise Exception("Total of cpus is required")
+
+		if not memory:
+			raise Exception("Total of memory is required")
+
+		if not ports:
+			raise Exception("Ports of application is required")
+
+		if not path:
+			raise Exception("Path where contains the code of application is required")
+
+		elements = {'customer': customer, 'name': name_application, 'total': total_containers, 'cpus': cpus, 'memory': memory, 'ports': ports, 'path': path}
+
+		if args is not None:
+			elements['args'] = args
+
+		return self._send_request(ito=ito, ifrom=ifrom, action='master-first-deploy', timeout=timeout, elements=elements)
+
+	def response_master_deploy(self, iq_response=None, ito=None, ifrom=None, success=None, response=None, error=None):
+		self._send_response(ito=ito, ifrom=ifrom, success=success, response=response, error=error, iq_response=iq_response, element='message')
+
+	def request_master_append_deploy(self, customer, name_application, total_containers, ito, ifrom, timeout=None):
+		if not customer:
+			raise Exception("Customer of application is required")
+
+		if not name_application:
+			raise Exception("Name of application is required")
+
+		if not total_containers:
+			raise Exception("Total of containers is required")
+
+		elements = {'customer': customer, 'name': name_application, 'total': total_containers}
+
+		return self._send_request(ito=ito, ifrom=ifrom, action='master-append-deploy', timeout=timeout, elements=elements)
+
+	def response_master_append_deploy(self, iq_response=None, ito=None, ifrom=None, success=None, response=None, error=None):
+		self._send_response(ito=ito, ifrom=ifrom, success=success, response=response, error=error, iq_response=iq_response, element='message')
+
     def request_get_name_pods(self, ito=None, ifrom=None):
         iq = self.xmpp.Iq()
         iq['id'] = 'name-pods'
