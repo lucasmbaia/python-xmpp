@@ -96,6 +96,10 @@ class Minion(sleekxmpp.ClientXMPP):
 
 		self.add_event_handler("muc::%s::got_online" %
 							   self.room, self.muc_online)
+		
+		self.channel_connections['die'] = Channel(server_process=self.docker_process,
+												pod_id='die')
+		self.channel_connections['die'].register(self.docker_process.public_address(), self._check_container_die)
 
 	def message(self, msg):
 		if msg['type'] in ('chat', 'normal'):
@@ -205,6 +209,28 @@ class Minion(sleekxmpp.ClientXMPP):
 														  ifrom=self.boundjid,
 														  success=False,
 														  error=unicode(e))
+
+	def _check_container_die(self, event):
+		dic_event = json.loads(event)
+		etcd_conn = Etcd(self.etcd_url, self.etcd_port)
+
+		container_name = dic_event['Actor']['Attributes']['name']
+		image = dic_event['Actor']['Attributes']['image']
+
+		cn = container_name.split('_app-')
+
+		customer = cn[0]
+		application_name = '-'.join(cn[1].split('-')[:-1])
+
+		etcd_key = '/' + customer + '/' + application_name
+
+		print(etcd_key)
+		try:
+			values = ast.literal_eval(etcd_conn.read(etcd_key))
+		except Exception as e:
+			print(e)
+
+		print(values)
 
 	def _load_image(self, path):
 		infos = path.split('/')

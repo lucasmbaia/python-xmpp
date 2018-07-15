@@ -191,7 +191,9 @@ class Zeus(sleekxmpp.ClientXMPP):
 		if len(self.minions) == 0:
 			raise Exception('Not have hosts to start the deploy')
 
-		values_etcd = {'cpus': args['cpus'], 'memory': args['memory'], 'ports_dst': args['ports'].strip().split(','), 'image': args['name'] + '/image:v1', 'total': args['total']}
+		image = args['customer'] + '_app-' + args['name'] + '/image:v1'
+
+		values_etcd = {'cpus': args['cpus'], 'memory': args['memory'], 'ports_dst': args['ports'].strip().split(','), 'image': image, 'total': args['total']}
 		key_application = '/' + args['customer'] + '/' + args['name']
 		
 		etcd_conn = Etcd(self.etcd_url, self.etcd_port)
@@ -207,23 +209,23 @@ class Zeus(sleekxmpp.ClientXMPP):
 			raise Exception(e)
 
 		try:
-			self._send_deploy_minion(args=args, iq_response=iq_response, ifrom=ifrom, key_application=key_application, first=True)
+			self._send_deploy_minion(args=args, image=image, iq_response=iq_response, ifrom=ifrom, key_application=key_application, first=True)
 		except Exception as e:
 			raise Exception(e)
 
 	def _append_containers(self, args, iq_response, ifrom):
 		print(args)
 
-	def _send_deploy_minion(self, args, iq_response, ifrom, key_application, first):
+	def _send_deploy_minion(self, args, image, iq_response, ifrom, key_application, first):
 		if len(self.minions) == 1:
 			if first:
 				try:
-					self._generate_image(path=args['path'], name=args['name'], key=key_application, ito=self.jid_minions[0])
+					self._generate_image(path=args['path'], name=image, key=key_application, ito=self.jid_minions[0])
 				except Exception as e:
 					raise Exception(e)
 
 			for number in range(int(args['total'])):
-				application_name = args['name'] + '-' + str(number)
+				application_name = args['customer'] + '_app-' + args['name'] + '-' + str(number)
 
 				thread_deploy_minion = threading.Thread(target=self._requet_deploy_to_minion, args=[self.jid_minions[0], args['name'], key_application, application_name, ifrom])
 				thread_deploy_minion.daemon = True
@@ -323,21 +325,21 @@ class Zeus(sleekxmpp.ClientXMPP):
 		if len(self.minions) == 1:
 			try:
 				self._generate_image(path='/root/python-xmpp/go/hello_world/hello_world',
-									 name=hostname, key=endpoint, ito=self.jid_minions[0])
+									 name=customer + '_app-' + hostname, key=endpoint, ito=self.jid_minions[0])
 			except Exception as e:
 				self._handler_send_message(msg['from'], unicode(e))
 
 			for number in range(pods):
-				application_name = hostname + "-" + str(number)
+				application_name = customer + '_app-' + hostname + "-" + str(number)
 
 				thread_deploy_minion = threading.Thread(target=self._requet_deploy_to_minion, args=[
 					self.jid_minions[0], hostname, endpoint, application_name, msg['from']])
 				thread_deploy_minion.daemon = True
 				thread_deploy_minion.start()
 		else:
-			def start_deploy(self, key, number, iterator, endpoint, hostname, ifrom):
+			def start_deploy(self, key, number, iterator, endpoint, hostname, ifrom, customer):
 				for n in range(number):
-					application_name = hostname + "-" + str(iterator)
+					application_name = customer + '_app-' + hostname + "-" + str(iterator)
 					iterator += 1
 
 					thread_deploy_minion = threading.Thread(target=self._requet_deploy_to_minion,
@@ -351,20 +353,20 @@ class Zeus(sleekxmpp.ClientXMPP):
 
 			try:
 				self._generate_image(
-					path='/root/python-xmpp/go/hello_world/hello_world', name=hostname, key=endpoint, ito=keys[0])
+					path='/root/python-xmpp/go/hello_world/hello_world', name=customer + '_app-' + hostname, key=endpoint, ito=keys[0])
 			except Exception as e:
 				self._handler_send_message(msg['from'], unicode(e))
 
 			print(keys[1:])
 			for key in keys[1:]:
 				try:
-					self._load_image(path=self.path_images + hostname + '.tar.gz', ito=key)
+					self._load_image(path=self.path_images + customer + '_app-' + hostname + '.tar.gz', ito=key)
 				except Exception as e:
 					self._handler_send_message(msg['from'], unicode(e))
 
 			for key in keys:
 				thread_start_deploy = threading.Thread(target=start_deploy,
-													   args=[self, key, minions_pods[key], iterator, endpoint, hostname, msg['from']])
+													   args=[self, key, minions_pods[key], iterator, endpoint, hostname, msg['from'], customer])
 				thread_start_deploy.daemon = True
 				thread_start_deploy.start()
 
@@ -601,7 +603,7 @@ class Zeus(sleekxmpp.ClientXMPP):
 				ports = value.strip().replace("--ports=", "").strip().split(',')
 				values_etcd['ports_dst'] = ports
 
-		values_etcd['image'] = hostname + '/image:v1'
+		values_etcd['image'] = customer + '_app-' + hostname + '/image:v1'
 		return hostname, customer, pods, values_etcd
 
 	def create_room(self, msg):
