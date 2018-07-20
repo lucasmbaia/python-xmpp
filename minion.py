@@ -15,6 +15,7 @@ import ast
 import subprocess
 import os
 import Queue
+import multiprocessing
 
 from sleekxmpp.exceptions import IqError, IqTimeout
 from sleekxmpp.xmlstream.handler.callback import Callback
@@ -30,6 +31,7 @@ from etcdf import Etcd
 from events import Channel
 from sleekxmpp.plugins.docker.stanza import Docker
 from sleekxmpp.plugins.docker.register import DOCKER
+from multiprocessing.pool import ThreadPool
 
 if sys.version_info < (3, 0):
 	reload(sys)
@@ -51,7 +53,10 @@ class Minion(sleekxmpp.ClientXMPP):
 		self.add_event_handler("name_pods", self._handler_docker)
 		self.docker_process = Channel(docker_process=True)
 		self.pod_deploy_start = []
+		self.container_deploy_start = []
 		self.channel_connections = {}
+		self.minion_containers = []
+		self.retry_deploy_container = {}
 
 	def start(self, event):
 		self.send_presence()
@@ -96,11 +101,19 @@ class Minion(sleekxmpp.ClientXMPP):
 
 		self.add_event_handler("muc::%s::got_online" %
 							   self.room, self.muc_online)
-		
+		containers = self._handler_name_containers()
+
+		if containers is not None:
+			self.minion_containers = containers
+
+		print(self.minion_containers)
+
 		self.channel_connections['die'] = Channel(server_process=self.docker_process,
-												pod_id='die')
+												pod_id='die', target=self._check_container_die)
+
 		self.channel_connections['die'].register(self.docker_process.public_address(), self._check_container_die)
 
+		print("PASSOU")
 	def message(self, msg):
 		if msg['type'] in ('chat', 'normal'):
 			option = msg['body'].split()[0]
@@ -114,6 +127,10 @@ class Minion(sleekxmpp.ClientXMPP):
 		if iq['id'] == 'name-pods':
 			try:
 				names = self._handler_name_containers()
+
+				if names is None:
+					name = ''
+
 				self.plugin['docker'].response_get_name_pods(ito=iq['from'],
 															 ifrom=self.boundjid,
 															 success=True,
@@ -212,25 +229,79 @@ class Minion(sleekxmpp.ClientXMPP):
 
 	def _check_container_die(self, event):
 		dic_event = json.loads(event)
-		etcd_conn = Etcd(self.etcd_url, self.etcd_port)
-
 		container_name = dic_event['Actor']['Attributes']['name']
-		image = dic_event['Actor']['Attributes']['image']
 
-		cn = container_name.split('_app-')
+		print(container_name)
+		if container_name in self.minion_containers:
+			if container_name not in self.retry_deploy_container:
+				self.retry_deploy_container[container_name] = 0
 
-		customer = cn[0]
-		application_name = '-'.join(cn[1].split('-')[:-1])
+			if self.retry_deploy_container[container_name] < 3:
+				image = dic_event['Actor']['Attributes']['image']
+				cn = container_name.split('_app-')
 
-		etcd_key = '/' + customer + '/' + application_name
+				customer = cn[0]
+				application_name = '-'.join(cn[1].split('-')[:-1])
+
+				print(customer, application_name)
+				etcd_key = '/' + customer + '/' + application_name
+
+				self._thread_generate_container_die(application_name=application_name, container_name=container_name, etcd_key=etcd_key)
+				#self.retry_deploy_container[container_name] += 1
+				#tcd = multiprocessing.Process(target=self._thread_generate_container_die, args=(application_name, container_name, etcd_key,))
+				#tcd.daemon = True
+				#tcd.start()
+			else:
+				print("JA DEU A PARADA")
+				del self.minion_containers[container_name]
+
+	def _thread_generate_container_die(self, application_name, container_name, etcd_key):
+		print("foi")
+		etcd_conn = Etcd(self.etcd_url, self.etcd_port)
+		args = {'container_name': str(container_name), 'application_name': str(application_name), 'key': str(etcd_key), 'protocol': {'8080': 'http'}, 'dns': 'lucas.com.br'}
 
 		print(etcd_key)
 		try:
 			values = ast.literal_eval(etcd_conn.read(etcd_key))
 		except Exception as e:
 			print(e)
+			return
 
 		print(values)
+		try:
+			command = self.docker_command(container_name=str(container_name), values=values)
+		except Exception as e:
+			print(e)
+			return
+
+		print(command, values, self.channel_connections)
+		self.container_deploy_start.append(container_name)
+		self.channel_connections[container_name] = Channel(server_process=self.docker_process,
+															pod_id=container_name,
+															pod_args=args)
+
+		self.channel_connections[container_name].register(self.docker_process.public_address(),
+															self._generate_container_die)
+
+		try:
+			docker_deploy = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+			(out, err) = docker_deploy.communicate()
+
+			if err:
+				self.channel_connections[container_name].close()
+		except OSError as e:
+			self.channel_connections[container_name].close()
+
+		#return
+
+	def _generate_container_die(self, event):
+		dic_event = json.loads(event)
+		
+		if 'status' in dic_event['docker']:
+			if 'start' in dic_event['docker']['status']:
+				print("PORAAAA", dic_event)
+				print("CONTAINER NAME", dic_event['args']['container_name'])
+				self.channel_connections[dic_event['args']['container_name']].close()
 
 	def _load_image(self, path):
 		infos = path.split('/')
@@ -364,8 +435,7 @@ class Minion(sleekxmpp.ClientXMPP):
 			raise Exception(e)
 
 		try:
-			command = self.docker_command(
-				name, key, user, ports_service, values)
+			command = self.docker_command(container_name=user, values=values)
 		except Exception as e:
 			raise Exception(e)
 
@@ -440,12 +510,14 @@ class Minion(sleekxmpp.ClientXMPP):
 			keys = ports.keys()
 
 			print(key_exists)
+			print("ARGS: ", args)
 			print('/haproxy/' + args['application_name'])
 
 			if key_exists:
 				try:
 					values = ast.literal_eval(etcd_conn.read('/haproxy/' + args['application_name']))
 
+					print("VALUES: ", values)
 					for key in keys:
 						for x in values['hosts']:
 							if 'portSRC' in x and x['portSRC'] == key:
@@ -486,6 +558,7 @@ class Minion(sleekxmpp.ClientXMPP):
 																iq_id=args['iq_id'],
 																success=True,
 																response='OK')
+					self.minion_containers.append(pod)
 				except Exception as e:
 					self.plugin['docker'].response_first_deploy(ito=args['from'],
 																ifrom=self.boundjid,
@@ -549,9 +622,7 @@ class Minion(sleekxmpp.ClientXMPP):
 			response = self.exec_command(command)
 
 			if response is not None:
-				response = self.exec_command(command).split('\n')
-			else:
-				response = 'Not exists containers'
+				response = response.replace('"', '').split('\n')[:-1]
 
 			return response
 		except Exception as e:
@@ -613,7 +684,7 @@ class Minion(sleekxmpp.ClientXMPP):
 
 		return ports
 
-	def docker_command(self, hostname, endpoint, user_container, ports_service, values):
+	def docker_command(self, container_name, values):
 		command = ['docker', 'run', '--rm']
 
 		if 'args' in values:
@@ -627,7 +698,7 @@ class Minion(sleekxmpp.ClientXMPP):
 				command.append('--expose=' + x)
 
 		command.append('--name')
-		command.append(user_container)
+		command.append(container_name)
 
 		if 'cpus' in values:
 			command.append('--cpus=' + values['cpus'])

@@ -300,6 +300,7 @@ class Zeus(sleekxmpp.ClientXMPP):
 		if len(self.minions) == 0:
 			self._handler_send_message(
 				msg['from'], "Not have hosts to start the deploy")
+			return
 
 		try:
 			hostname, customer, pods, values_etcd = self._get_start_infos(
@@ -496,8 +497,11 @@ class Zeus(sleekxmpp.ClientXMPP):
 		idx = 0
 		check_iquals = True
 
+		print(self.jid_minions)
 		for minion in self.jid_minions:
 			try:
+				print("CARALHO")
+				print(minion)
 				response = self.plugin['docker'].request_total_pods(
 					ito=minion, ifrom=self.boundjid)
 
@@ -658,6 +662,7 @@ class Zeus(sleekxmpp.ClientXMPP):
 					self.minions.append(presence['muc']['nick'])
 					self.jid_minions.append(presence['muc']['jid'])
 
+					print(self.jid_minions)
 					# try:
 					#    response = self.plugin['docker'].request_get_name_pods(ito=presence['muc']['jid'],
 					#                                                           ifrom=self.boundjid)
