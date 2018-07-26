@@ -41,6 +41,16 @@ if sys.version_info < (3, 0):
 else:
     raw_input = input
 
+class ExcThread(threading.Thread):
+    def __init__(self, interval, target, args=None):
+	threading.Thread.__init__(self)
+	self.interval = interval
+	self.target = target
+	self.args = args
+
+    def run(self):
+	self.success = None
+	self.error = None
 
 class Minion(sleekxmpp.ClientXMPP):
     def __init__(self, jid, password, etcd_url):
@@ -116,8 +126,7 @@ class Minion(sleekxmpp.ClientXMPP):
         self.channel_connections['die'] = Channel(server_process=self.docker_process,
                                                   pod_id='die', target=self._check_container_die)
 
-        self.channel_connections['die'].register(
-            self.docker_process.public_address(), self._check_container_die)
+        self.channel_connections['die'].register(self.docker_process.public_address(), self._check_container_die)
 
         print("PASSOU")
 
@@ -180,6 +189,20 @@ class Minion(sleekxmpp.ClientXMPP):
                                                             success=False,
                                                             error=unicode(e))
 
+	if 'deploy-container' in iq['id']:
+	    try:
+		self._deploy_container(ifrom=iq['from'],
+				    application_name=iq['docker']['application_name'],
+				    container_name=iq['docker']['container_name'],
+				    key_application=iq['docker']['key_application'],
+				    iq_response=iq['id'])
+	    except Exception as e:
+		self.plugin['docker'].response_minion_deploy(iq_response=iq['id'],
+							    ito=iq['from'],
+							    ifrom=self.boundjid,
+							    success=False,
+							    error=unicode(e))
+
         if 'action-container' in iq['id']:
             container = iq['docker']['name']
             action = iq['docker']['action']
@@ -202,13 +225,12 @@ class Minion(sleekxmpp.ClientXMPP):
                                                                 error=unicode(e))
 
         if 'generate-image' in iq['id']:
-            path = iq['docker']['path']
-            image_name = iq['docker']['name']
-            key = iq['docker']['key']
-
             try:
-                response = self._generate_image(
-                    path=path, image_name=image_name, key=key, iq_response=iq['id'], ifrom=iq['from'])
+                response = self._generate_image(path=iq['docker']['path'],
+						image_name=iq['docker']['name'],
+						key_etcd=iq['docker']['key'],
+						iq_response=iq['id'],
+						ifrom=iq['from'])
             except Exception as e:
                 self.plugin['docker'].response_generate_image(iq_response=iq['id'],
                                                               ito=iq['from'],
@@ -235,89 +257,113 @@ class Minion(sleekxmpp.ClientXMPP):
                                                           error=unicode(e))
 
     def _check_container_die(self, event):
-        dic_event = json.loads(event)
-        container_name = dic_event['Actor']['Attributes']['name']
+        ev = json.loads(event)
+        container_name = ev['Actor']['Attributes']['name']
 
-        print(container_name)
+	logging.info('Container die: %s' % (container_name))
         if container_name in self.minion_containers:
             if container_name not in self.retry_deploy_container:
                 self.retry_deploy_container[container_name] = 0
 
             if self.retry_deploy_container[container_name] < 3:
-                image = dic_event['Actor']['Attributes']['image']
+                image = ev['Actor']['Attributes']['image']
                 cn = container_name.split('_app-')
 
                 customer = cn[0]
                 application_name = '-'.join(cn[1].split('-')[:-1])
 
-                print(customer, application_name)
-                etcd_key = '/' + customer + '/' + application_name
+		key_application = '/{0}/{1}'.format(customer, application_name)
 
-                self._thread_generate_container_die(
-                    application_name=application_name, container_name=container_name, etcd_key=etcd_key)
-                #self.retry_deploy_container[container_name] += 1
-                #tcd = multiprocessing.Process(target=self._thread_generate_container_die, args=(application_name, container_name, etcd_key,))
-                #tcd.daemon = True
-                # tcd.start()
+                self._thread_generate_container_die(application_name=application_name, container_name=container_name, key_application=key_application)
             else:
                 print("JA DEU A PARADA")
                 del self.minion_containers[container_name]
 
-    def _thread_generate_container_die(self, application_name, container_name, etcd_key):
-        print("foi")
-        etcd_conn = Etcd(self.etcd_url, self.etcd_port)
-        args = {'container_name': str(container_name), 'application_name': str(
-            application_name), 'key': str(etcd_key), 'protocol': {'8080': 'http'}, 'dns': 'lucas.com.br'}
+    def _thread_generate_container_die(self, application_name, container_name, key_application):
+	logging.info('Start thread to create container die: %s' % (container_name))
 
-        print(etcd_key)
+	print(key_application)
         try:
-            values = ast.literal_eval(etcd_conn.read(etcd_key))
+            values = ast.literal_eval(self.etcd_conn.read(key_application))
         except Exception as e:
-            print(e)
+	    logging.error('Error to read key % in etcd: %s' % (key_application, unicode(e)))
             return
 
-        print(values)
-        try:
-            command = self.docker_command(
-                container_name=str(container_name), values=values)
-        except Exception as e:
-            print(e)
-            return
+	args = {'application_name': str(application_name), 'container_name': str(container_name), 'protocol': str(values['protocol']), 'dns': str(values['dns'])}
 
-        print(command, values, self.channel_connections)
+	print(values, args)
         self.container_deploy_start.append(container_name)
         self.channel_connections[container_name] = Channel(server_process=self.docker_process,
                                                            pod_id=container_name,
                                                            pod_args=args)
 
-        self.channel_connections[container_name].register(self.docker_process.public_address(),
-                                                          self._generate_container_die)
+        self.channel_connections[container_name].register(self.docker_process.public_address(), self._check_generate_container_die)
 
-        try:
-            docker_deploy = subprocess.Popen(
-                command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-            (out, err) = docker_deploy.communicate()
+	try:
+	    self.docker_commands.deploy(container_name=container_name, infos_application=values)
+	    print("FOI O DEPLOY")
+	except Exception as e:
+	    self.container_deploy_start.remove(container_name)
+	    self.channel_connections[container_name].close()
+	    logging.error('Error to create deploy to container die: %s' % (unicode(e)))
 
-            if err:
-                self.channel_connections[container_name].close()
-        except OSError as e:
-            self.channel_connections[container_name].close()
+    def _check_generate_container_die(self, event):
+	print(event)
+	ev = json.loads(event)
+	container_name = None
 
-        # return
+	if 'container_name' in ev['args']:
+	    container_name = ev['args']['container_name']
 
-    def _generate_container_die(self, event):
-        dic_event = json.loads(event)
+	def haproxy(self, container_name, args):
+	    if container_name is not None and container_name in self.container_deploy_start:
+		dns = None
 
-        if 'status' in dic_event['docker']:
-            if 'start' in dic_event['docker']['status']:
-                print("PORAAAA", dic_event)
-                print("CONTAINER NAME", dic_event['args']['container_name'])
-                self.channel_connections[dic_event['args']
-                                         ['container_name']].close()
+		try:
+		    address_container = self.docker_commands.address_container(container_name)
+		except Exception as e:
+		    raise Exception(e)
+
+		try:
+		    ports_container = self.docker_commands.ports_container(container_name)
+		except Exception as e:
+		    raise Exception(e)
+
+		if 'dns' in args:
+		    dns = args['dns']
+
+		try:
+		    print("TA NO HAPROXY")
+		    print(args['application_name'])
+		    print(container_name)
+		    self.haproxy.remove_container(application_name=args['application_name'], container_name=container_name)
+
+		    self.haproxy.generate_conf(application_name=args['application_name'], container_name=container_name, ports_container=ports_container, protocol=args['protocol'], address_container=address_container, dns=dns)
+		except Exception as e:
+		    raise Exception(e)
+
+		self.container_deploy_start.remove(container_name)
+		self.channel_connections[container_name].close()
+
+	if 'status' in ev['docker']:
+	    if 'start' in ev['docker']['status']:
+		resp = threading.Timer(10, haproxy, [self, container_name, ev['args']])
+		resp.daemon = True
+		resp.start()
+
+	    if 'die' in ev['docker']['status']:
+		if container_name is not None:
+		    if container_name in self.container_deploy_start:
+			self.container_deploy_start.remove(container_name)
+		    self.channel_connections[container_name].close()
 
     def _load_image(self, path):
         infos = path.split('/')
         image = infos[len(infos) - 1:][0].split('.')[0]
+
+	print("LOAD IMAGE")
+	print(infos)
+	print(image)
 
         try:
             exists = self._handler_exists_image(image)
@@ -330,124 +376,209 @@ class Minion(sleekxmpp.ClientXMPP):
             except Exception as e:
                 raise Exception(e)
 
-    def _generate_image(self, path, image_name, key, iq_response, ifrom):
-        command = ['docker', 'run', '-t', '-i', '--rm']
-        etcd_conn = Etcd(self.etcd_url, self.etcd_port)
-
-        try:
-            values = ast.literal_eval(etcd_conn.read(key))
-        except Exception as e:
-            raise Exception(e)
-
-        if 'args' in values:
-            for x in values['args']:
-                command.append('--env')
-                command.append(x + '=' + values['args'][x])
-
-        if 'ports_dst' in values:
-            command.append('-P')
-            for x in values['ports_dst']:
-                command.append('--expose=' + x)
-
-        command.append('--name')
-        command.append(image_name)
-
-        command.append('--cpus=0.1')
-        command.append('--memory=15m')
-        command.append('-d')
-        command.append('alpine')
-
-        self.pod_deploy_start.append(image_name)
-        args = {'from': str(ifrom), 'container': str(image_name), 'path': str(
-                path), 'from': str(ifrom), 'iq_response': str(iq_response)}
-        self.channel_connections[image_name] = Channel(server_process=self.docker_process,
-                                                       pod_id=image_name,
-                                                       pod_args=args)
-
-        self.channel_connections[image_name].register(
-            self.docker_process.public_address(), self._handler_check_generate_image)
-
-        print(command)
-        try:
-            response = self.exec_command(command)
-        except Exception as e:
-            self.channel_connections[image_name].close()
-            raise Exception(e)
-
-    def _handler_check_generate_image(self, event):
-        dic_event = json.loads(event)
-        container = None
-
-        print(dic_event)
-        if 'container' in dic_event['args']:
-            container = dic_event['args']['container']
-
-        def basic_commands(container, path):
-            command = ['/usr/bin/sh', 'generate_image.sh',
-                       container, path, 'v1', 'hello_world']
-
-            print("GENERATE IMAGE")
-            print(command)
-            try:
-                self.exec_command(command)
-            except Exception as e:
-                raise Exception(e)
-
-        def check_image(self, args, container):
-            if container is not None and container in self.pod_deploy_start:
-                try:
-                    basic_commands(container, args['path'])
-                    self.plugin['docker'].response_generate_image(iq_response=args['iq_response'],
-                                                                  ito=args['from'],
-                                                                  ifrom=self.boundjid,
-                                                                  success=True,
-                                                                  response=container)
-                except Exception as e:
-                    print("ERRO PORRA", e)
-                    self.plugin['docker'].response_generate_image(iq_response=args['iq_response'],
-                                                                  ito=args['from'],
-                                                                  ifrom=self.boundjid,
-                                                                  success=False,
-                                                                  error=unicode(e))
-
-        if 'status' in dic_event['docker']:
-            if dic_event['docker']['status'] == 'start':
-                response = threading.Timer(
-                    5, check_image, [self, dic_event['args'], container])
-                response.daemon = True
-                response.start()
-
-            if 'die' in dic_event['docker']['status']:
-                if container is not None:
-                    if container in self.pod_deploy_start:
-                        self.pod_deploy_start.remove(container)
-
-                    self.plugin['docker'].response_generate_image(iq_response=dic_event['args']['iq_response'],
-                                                                  ito=dic_event['args']['from'],
-                                                                  ifrom=self.boundjid,
-                                                                  success=False,
-                                                                  error=unicode(e))
-                    self.channel_connections[container].close()
-
-    def _exec_action_container(self, action, container):
-        command = ['docker', action, container]
-
-        try:
-            return self.exec_command(command)
-        except Exception as e:
-            raise Exception(e)
-
-    def _deploy_container(self, ifrom, application_name, container_name, key_etcd, iq_response):
-	args = {'from': str(ifrom), 'application_name': application_name, 'container_name': container_name, 'iq_response': iq_response}
+    def _generate_image(self, path, image_name, key_etcd, iq_response, ifrom):
+	logging.info('Received the request to create image: %s' % (image_name))
 
 	try:
 	    values = ast.literal_eval(self.etcd_conn.read(key_etcd))
 	except Exception as e:
 	    raise Exception(e)
 
-	args = {'from': str(ifrom), 'application_name': application_name, 'container_name': container_name, 'iq_response': iq_response, 'protocol': values['procotol'], 'dns': args['dns']}
+	values['image'] = 'alpine'
+	args = {'from': str(ifrom), 'container_name': str(image_name), 'iq_response': str(iq_response), 'path': str(path)}
 
-	self.container_deploy_start(container_name)
+	self.container_deploy_start.append(image_name)
+	self.channel_connections[image_name] = Channel(server_process=self.docker_process,
+							pod_id=image_name,
+							pod_args=args)
+
+	self.channel_connections[image_name].register(self.docker_process.public_address(), self._check_generate_image)
+
+	try:
+	    self.docker_commands.deploy(container_name=image_name, infos_application=values, image_create=True)
+	except Exception as e:
+	    self.container_deploy_start.remove(image_name)
+	    self.channel_connections[image_name].close()
+	    raise Exception(e)
+
+    def _check_generate_image(self, event):
+	ev = json.loads(event)
+	container_name = None
+
+	if 'container_name' in ev['args']:
+	    container_name = ev['args']['container_name']
+
+	def basic_gi(container_name, path):
+	    logging.info('Running the generate_image.sh with image name: %s' % (container_name))
+	    command = ['/usr/bin/sh', 'generate_image.sh', container_name, path, 'v1', 'hello_world']
+
+	    try:
+		self.exec_command(command)
+	    except Exception as e:
+		raise Exception(e)
+
+	def check_image(self, args, container_name):
+	    if container_name is not None and container_name in self.container_deploy_start:
+		try:
+		    basic_gi(container_name, args['path'])
+
+		    self.plugin['docker'].response_generate_image(iq_response=args['iq_response'],
+								ito=args['from'],
+								ifrom=self.boundjid,
+								success=True,
+								response=container_name)
+		except Exception as e:
+		    self.plugin['docker'].response_generate_image(iq_response=args['iq_response'],
+								ito=args['from'],
+								ifrom=self.boundjid,
+								success=False,
+								error=unicode(e))
+
+
+		if container_name in self.container_deploy_start:
+		    self.container_deploy_start.remove(container_name)
+
+		self.docker_commands.remove_container(container_name)
+
+		if container_name in self.channel_connections:
+		    self.channel_connections[container_name].close()
+
+	if 'status' in ev['docker']:
+	    if ev['docker']['status'] == 'start':
+		resp = threading.Timer(5, check_image, [self, ev['args'], container_name])
+		resp.daemon = True
+		resp.start()
+
+	    if 'die' in ev['docker']['status']:
+		if container_name is not None:
+		    if container_name in self.container_deploy_start:
+			self.container_deploy_start.remove(container_name)
+
+		    self.plugin['docker'].response_generate_image(iq_response=ev['args']['iq_response'],
+								ito=ev['args']['from'],
+								ifrom=self.boundjid,
+								success=False,
+								error=unicode(e))
+
+		    if container_name in self.channel_connections:
+			self.channel_connections[container_name].close()
+
+
+
+#    def _generate_image(self, path, image_name, key, iq_response, ifrom):
+#        command = ['docker', 'run', '-t', '-i', '--rm']
+#        etcd_conn = Etcd(self.etcd_url, self.etcd_port)
+#
+#        try:
+#            values = ast.literal_eval(etcd_conn.read(key))
+#        except Exception as e:
+#            raise Exception(e)
+#
+#        if 'args' in values:
+#            for x in values['args']:
+#                command.append('--env')
+#                command.append(x + '=' + values['args'][x])
+#
+#        if 'ports_dst' in values:
+#            command.append('-P')
+#            for x in values['ports_dst']:
+#                command.append('--expose=' + x)
+#
+#        command.append('--name')
+#        command.append(image_name)
+#
+#        command.append('--cpus=0.1')
+#        command.append('--memory=15m')
+#        command.append('-d')
+#        command.append('alpine')
+#
+#        self.pod_deploy_start.append(image_name)
+#        args = {'from': str(ifrom), 'container': str(image_name), 'path': str(
+#                path), 'from': str(ifrom), 'iq_response': str(iq_response)}
+#        self.channel_connections[image_name] = Channel(server_process=self.docker_process,
+#                                                       pod_id=image_name,
+#                                                       pod_args=args)
+#
+#        self.channel_connections[image_name].register(
+#            self.docker_process.public_address(), self._handler_check_generate_image)
+#
+#        print(command)
+#        try:
+#            response = self.exec_command(command)
+#        except Exception as e:
+#            self.channel_connections[image_name].close()
+#            raise Exception(e)
+#
+#    def _handler_check_generate_image(self, event):
+#        dic_event = json.loads(event)
+#        container = None
+#
+#        print(dic_event)
+#        if 'container' in dic_event['args']:
+#            container = dic_event['args']['container']
+#
+#        def basic_commands(container, path):
+#            command = ['/usr/bin/sh', 'generate_image.sh',
+#                       container, path, 'v1', 'hello_world']
+#
+#            print("GENERATE IMAGE")
+#            print(command)
+#            try:
+#                self.exec_command(command)
+#            except Exception as e:
+#                raise Exception(e)
+#
+#        def check_image(self, args, container):
+#            if container is not None and container in self.pod_deploy_start:
+#                try:
+#                    basic_commands(container, args['path'])
+#                    self.plugin['docker'].response_generate_image(iq_response=args['iq_response'],
+#                                                                  ito=args['from'],
+#                                                                  ifrom=self.boundjid,
+#                                                                  success=True,
+#                                                                  response=container)
+#                except Exception as e:
+#                    print("ERRO PORRA", e)
+#                    self.plugin['docker'].response_generate_image(iq_response=args['iq_response'],
+#                                                                  ito=args['from'],
+#                                                                  ifrom=self.boundjid,
+#                                                                  success=False,
+#                                                                  error=unicode(e))
+#
+#        if 'status' in dic_event['docker']:
+#            if dic_event['docker']['status'] == 'start':
+#                response = threading.Timer(
+#                    5, check_image, [self, dic_event['args'], container])
+#                response.daemon = True
+#                response.start()
+#
+#            if 'die' in dic_event['docker']['status']:
+#                if container is not None:
+#                    if container in self.pod_deploy_start:
+#                        self.pod_deploy_start.remove(container)
+#
+#                    self.plugin['docker'].response_generate_image(iq_response=dic_event['args']['iq_response'],
+#                                                                  ito=dic_event['args']['from'],
+#                                                                  ifrom=self.boundjid,
+#                                                                  success=False,
+#                                                                  error=unicode(e))
+#                    self.channel_connections[container].close()
+
+    def _exec_action_container(self, action, container_name):
+	try:
+	    return self.docker_commands.action_container(container_name, action)
+	except Exception as e:
+	    raise Exception(e)
+
+    def _deploy_container(self, ifrom, application_name, container_name, key_application, iq_response):
+	try:
+	    values = ast.literal_eval(self.etcd_conn.read(key_application))
+	except Exception as e:
+	    raise Exception(e)
+
+	args = {'from': str(ifrom), 'application_name': str(application_name), 'container_name': str(container_name), 'iq_response': str(iq_response), 'protocol': str(values['protocol']), 'dns': str(values['dns'])}
+
+	self.container_deploy_start.append(container_name)
 	self.channel_connections[container_name] = Channel(server_process=self.docker_process,
 							pod_id=container_name,
 							pod_args=args)
@@ -457,15 +588,16 @@ class Minion(sleekxmpp.ClientXMPP):
 	try:
 	    self.docker_commands.deploy(container_name=container_name, infos_application=values)
 	except Exception as e:
+	    self.container_deploy_start.remove(container_name)
 	    self.channel_connections[container_name].close()
 	    raise Exception(e)
 
     def _check_deploy_container(self, event):
-	ev = json.dumps(event)
+	ev = json.loads(event)
 	container_name = None
 
-	if 'pod' in ev['args']:
-	    container_name = ev['args']['pod']
+	if 'container_name' in ev['args']:
+	    container_name = ev['args']['container_name']
 
 	def haproxy(container_name, args):
 	    dns = None
@@ -484,7 +616,7 @@ class Minion(sleekxmpp.ClientXMPP):
 		dns = args['dns']
 
 	    try:
-		self.haproxy.generate_conf(application_name=args['application_name'], container_name=container_name, ports_container=ports_container, protocol=args['procotol'], address_container=address_container, dns=dns)
+		self.haproxy.generate_conf(application_name=args['application_name'], container_name=container_name, ports_container=ports_container, protocol=args['protocol'], address_container=address_container, dns=dns)
 	    except Exception as e:
 		raise Exception(e)
 
@@ -498,6 +630,7 @@ class Minion(sleekxmpp.ClientXMPP):
 								iq_id=args['iq_response'],
 								success=True,
 								response='OK')
+		    self.minion_containers.append(container_name)
 		except Exception as e:
 		    self.plugin['docker'].response_first_deploy(ito=args['from'],
 								ifrom=self.boundjid,
@@ -507,7 +640,6 @@ class Minion(sleekxmpp.ClientXMPP):
 
 		self.container_deploy_start.remove(container_name)
 		self.channel_connections[container_name].close()
-
 
 	if 'status' in ev['docker']:
 	    if 'start' in ev['docker']['status']:
@@ -527,181 +659,182 @@ class Minion(sleekxmpp.ClientXMPP):
 								error='Error to create ' + container_name)
 		    self.channel_connections[container_name].close()
 
-    def _handler_deploy(self, ifrom, name, key, user, iq_id):
-        ports_service = []
-        etcd_conn = Etcd(self.etcd_url, self.etcd_port)
-
-        try:
-            values = ast.literal_eval(etcd_conn.read(key))
-        except Exception as e:
-            raise Exception(e)
-
-        try:
-            command = self.docker_command(container_name=user, values=values)
-        except Exception as e:
-            raise Exception(e)
-
-        self.pod_deploy_start.append(user)
-        args = {'from': str(ifrom), 'pod': str(user), 'key': str(key), 'application_name': str(name), 'iq_id': str(iq_id), 'protocol': {'443': 'https', '8080': 'http'}, 'dns': 'lucas.com.br'}
-        self.channel_connections[user] = Channel(server_process=self.docker_process,
-                                                 pod_id=user,
-                                                 pod_args=args)
-
-        self.channel_connections[user].register(
-            self.docker_process.public_address(), self._handler_check_deploy)
-
-        print(args)
-        print(command)
-        try:
-            docker_process = subprocess.Popen(
-                command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-            (out, err) = docker_process.communicate()
-
-            if out:
-                return out
-            if err:
-                self.channel_connections[user].close()
-                raise Exception(err.strip())
-        except OSError as e:
-            self.channel_connections[user].close()
-            raise Exception(e)
-
-    def _handler_check_deploy(self, event):
-        # print(event)
-        dic_event = json.loads(event)
-        pod = None
-
-        if 'pod' in dic_event['args']:
-            pod = dic_event['args']['pod']
-
-        def haproxy(container, etcd_url, etcd_port, args):
-            ports = {}
-            #values = {}
-            etcd_conn = Etcd(etcd_url, etcd_port)
-            command_address = ['docker', 'inspect', '-f',
-                               '"{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}"', container]
-            command_ports = [
-                "docker", "inspect", "--format='{{range $p, $conf := .NetworkSettings.Ports}}{{$p}}:{{(index $conf 0).HostPort}}-{{end}}'", container]
-
-	    print("***************************************HAPROXY**********************************")
-            try:
-                ip_container = self.exec_command(
-                    command_address).strip().replace("'", "").replace('"', '')
-            except Exception as e:
-                raise Exception(e)
-
-            try:
-                ports_container = self.exec_command(
-                    command_ports).strip().replace("'", "")
-            except Exception as e:
-                raise Exception(e)
-
-	    print(ip_container, ports_container)
-            if ports_container:
-                p = ports_container.split('-')
-                p.pop()
-
-                for x in p:
-                    aux = x.split('/tcp:')
-                    src = aux[0]
-                    dst = aux[1]
-
-                    if src in ports:
-                        ports[src].append(dst)
-                    else:
-                        ports[src] = [dst]
-
-	    print(ports)
-            key_exists = etcd_conn.key_exists(
-                '/haproxy/' + args['application_name'])
-            keys = ports.keys()
-
-            print(key_exists)
-            print("ARGS: ", args)
-            print('/haproxy/' + args['application_name'])
-
-            if key_exists:
-                try:
-                    values = ast.literal_eval(etcd_conn.read(
-                        '/haproxy/' + args['application_name']))
-
-                    print("VALUES: ", values)
-                    for key in keys:
-                        for x in values['hosts']:
-                            if 'portSRC' in x and x['portSRC'] == key:
-                                for dst in ports[key]:
-				    x['containers'].append({'name': container, 'address': ip_container + ":" + dst})
-                                    #x['address'].append(ip_container + ":" + dst)
-
-                except Exception as e:
-                    raise Exception(e)
-            else:
-                values = {'hosts': [], 'dns': args['dns']}
-
-		print("KEYS CARALHO: ", keys)
-                for key in keys:
-		    print("KEY: ", key)
-                    containers = []
-
-                    for dst in ports[key]:
-			print("DST: ", dst)
-			containers.append({'name': container, 'address': ip_container + ":" + dst})
-                        #address.append(ip_container + ":" + dst)
-
-		    print(containers)
-                    #values['hosts'].append({'protocol': args['protocol'][key], 'portSRC': key, 'address': address})
-                    values['hosts'].append({'protocol': args['protocol'][key], 'portSRC': key, 'containers': containers})
-
-            print(values)
-            print(ports)
-            print(ip_container)
-
-            try:
-                etcd_conn.write(
-                    '/haproxy/' + args['application_name'], json.dumps(values))
-            except Exception as e:
-                raise Exception(e)
-
-            return True
-
-        def send_response(self, args, pod):
-            if pod is not None and pod in self.pod_deploy_start:
-                try:
-                    haproxy(pod, self.etcd_url, self.etcd_port, args)
-                    self.plugin['docker'].response_first_deploy(ito=args['from'],
-                                                                ifrom=self.boundjid,
-                                                                iq_id=args['iq_id'],
-                                                                success=True,
-                                                                response='OK')
-                    self.minion_containers.append(pod)
-                except Exception as e:
-                    self.plugin['docker'].response_first_deploy(ito=args['from'],
-                                                                ifrom=self.boundjid,
-                                                                iq_id=args['iq_id'],
-                                                                success=False,
-                                                                error=unicode(e))
-
-                self.pod_deploy_start.remove(pod)
-                self.channel_connections[pod].close()
-
-        if 'status' in dic_event['docker']:
-            if 'start' in dic_event['docker']['status']:
-                response = threading.Timer(
-                    10, send_response, [self, dic_event['args'], pod])
-                response.daemon = True
-                response.start()
-
-            if 'die' in dic_event['docker']['status']:
-                if pod is not None:
-                    if pod in self.pod_deploy_start:
-                        self.pod_deploy_start.remove(pod)
-
-                    self.plugin['docker'].response_first_deploy(ito=dic_event['args']['from'],
-                                                                ifrom=self.boundjid,
-                                                                iq_id=dic_event['args']['iq_id'],
-                                                                success=False,
-                                                                error='Error to create ' + pod)
-                    self.channel_connections[pod].close()
+#    def _handler_deploy(self, ifrom, name, key, user, iq_id):
+#        ports_service = []
+#        etcd_conn = Etcd(self.etcd_url, self.etcd_port)
+#
+#        try:
+#            values = ast.literal_eval(etcd_conn.read(key))
+#        except Exception as e:
+#            raise Exception(e)
+#
+#        try:
+#            command = self.docker_command(container_name=user, values=values)
+#        except Exception as e:
+#            raise Exception(e)
+#
+#        self.pod_deploy_start.append(user)
+#        args = {'from': str(ifrom), 'pod': str(user), 'key': str(key), 'application_name': str(name), 'iq_id': str(iq_id), 'protocol': {'443': 'https', '8080': 'http'}, 'dns': 'lucas.com.br'}
+#        self.channel_connections[user] = Channel(server_process=self.docker_process,
+#                                                 pod_id=user,
+#                                                 pod_args=args)
+#
+#        self.channel_connections[user].register(
+#            self.docker_process.public_address(), self._handler_check_deploy)
+#
+#        print(args)
+#        print(command)
+#        try:
+#            docker_process = subprocess.Popen(
+#                command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+#            (out, err) = docker_process.communicate()
+#
+#            if out:
+#                return out
+#            if err:
+#                self.channel_connections[user].close()
+#                raise Exception(err.strip())
+#        except OSError as e:
+#            self.channel_connections[user].close()
+#            raise Exception(e)
+#
+#    def _handler_check_deploy(self, event):
+#        # print(event)
+#        dic_event = json.loads(event)
+#        pod = None
+#
+#	print("EVENT: ", dic_event)
+#        if 'pod' in dic_event['args']:
+#            pod = dic_event['args']['pod']
+#
+#        def haproxy(container, etcd_url, etcd_port, args):
+#            ports = {}
+#            #values = {}
+#            etcd_conn = Etcd(etcd_url, etcd_port)
+#            command_address = ['docker', 'inspect', '-f',
+#                               '"{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}"', container]
+#            command_ports = [
+#                "docker", "inspect", "--format='{{range $p, $conf := .NetworkSettings.Ports}}{{$p}}:{{(index $conf 0).HostPort}}-{{end}}'", container]
+#
+#	    print("***************************************HAPROXY**********************************")
+#            try:
+#                ip_container = self.exec_command(
+#                    command_address).strip().replace("'", "").replace('"', '')
+#            except Exception as e:
+#                raise Exception(e)
+#
+#            try:
+#                ports_container = self.exec_command(
+#                    command_ports).strip().replace("'", "")
+#            except Exception as e:
+#                raise Exception(e)
+#
+#	    print(ip_container, ports_container)
+#            if ports_container:
+#                p = ports_container.split('-')
+#                p.pop()
+#
+#                for x in p:
+#                    aux = x.split('/tcp:')
+#                    src = aux[0]
+#                    dst = aux[1]
+#
+#                    if src in ports:
+#                        ports[src].append(dst)
+#                    else:
+#                        ports[src] = [dst]
+#
+#	    print(ports)
+#            key_exists = etcd_conn.key_exists(
+#                '/haproxy/' + args['application_name'])
+#            keys = ports.keys()
+#
+#            print(key_exists)
+#            print("ARGS: ", args)
+#            print('/haproxy/' + args['application_name'])
+#
+#            if key_exists:
+#                try:
+#                    values = ast.literal_eval(etcd_conn.read(
+#                        '/haproxy/' + args['application_name']))
+#
+#                    print("VALUES: ", values)
+#                    for key in keys:
+#                        for x in values['hosts']:
+#                            if 'portSRC' in x and x['portSRC'] == key:
+#                                for dst in ports[key]:
+#				    x['containers'].append({'name': container, 'address': ip_container + ":" + dst})
+#                                    #x['address'].append(ip_container + ":" + dst)
+#
+#                except Exception as e:
+#                    raise Exception(e)
+#            else:
+#                values = {'hosts': [], 'dns': args['dns']}
+#
+#		print("KEYS CARALHO: ", keys)
+#                for key in keys:
+#		    print("KEY: ", key)
+#                    containers = []
+#
+#                    for dst in ports[key]:
+#			print("DST: ", dst)
+#			containers.append({'name': container, 'address': ip_container + ":" + dst})
+#                        #address.append(ip_container + ":" + dst)
+#
+#		    print(containers)
+#                    #values['hosts'].append({'protocol': args['protocol'][key], 'portSRC': key, 'address': address})
+#                    values['hosts'].append({'protocol': args['protocol'][key], 'portSRC': key, 'containers': containers})
+#
+#            print(values)
+#            print(ports)
+#            print(ip_container)
+#
+#            try:
+#                etcd_conn.write(
+#                    '/haproxy/' + args['application_name'], json.dumps(values))
+#            except Exception as e:
+#                raise Exception(e)
+#
+#            return True
+#
+#        def send_response(self, args, pod):
+#            if pod is not None and pod in self.pod_deploy_start:
+#                try:
+#                    haproxy(pod, self.etcd_url, self.etcd_port, args)
+#                    self.plugin['docker'].response_first_deploy(ito=args['from'],
+#                                                                ifrom=self.boundjid,
+#                                                                iq_id=args['iq_id'],
+#                                                                success=True,
+#                                                                response='OK')
+#                    self.minion_containers.append(pod)
+#                except Exception as e:
+#                    self.plugin['docker'].response_first_deploy(ito=args['from'],
+#                                                                ifrom=self.boundjid,
+#                                                                iq_id=args['iq_id'],
+#                                                                success=False,
+#                                                                error=unicode(e))
+#
+#                self.pod_deploy_start.remove(pod)
+#                self.channel_connections[pod].close()
+#
+#        if 'status' in dic_event['docker']:
+#            if 'start' in dic_event['docker']['status']:
+#                response = threading.Timer(
+#                    10, send_response, [self, dic_event['args'], pod])
+#                response.daemon = True
+#                response.start()
+#
+#            if 'die' in dic_event['docker']['status']:
+#                if pod is not None:
+#                    if pod in self.pod_deploy_start:
+#                        self.pod_deploy_start.remove(pod)
+#
+#                    self.plugin['docker'].response_first_deploy(ito=dic_event['args']['from'],
+#                                                                ifrom=self.boundjid,
+#                                                                iq_id=dic_event['args']['iq_id'],
+#                                                                success=False,
+#                                                                error='Error to create ' + pod)
+#                    self.channel_connections[pod].close()
 
     def _handler_exists_image(self, image):
         command = ['docker', 'images', '--format',

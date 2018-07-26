@@ -49,15 +49,12 @@ class DOCKER(BasePlugin):
                 element = ET.Element(key)
                 element.text = str(elements[key])
 
-		print(key, elements[key], element, query)
                 query.append(element)
 
             iq.append(query)
         else:
             iq['query'] = 'jabber:iq:docker'
-	    #iq.append(query)
 
-	print(iq)
         return iq.send(now=True, timeout=timeout)
 
     def _send_response(self, ito=None, ifrom=None, success=None, response=None, error=None, iq_response=None, element=None):
@@ -95,7 +92,6 @@ class DOCKER(BasePlugin):
         if not action:
             raise Exception("Container action is required")
 
-        print("CARALHO")
         return self._send_request(ito=ito, ifrom=ifrom, action='action-container', elements={'name': container, 'action': action})
 
     def response_action_container(self, iq_response=None, ito=None, ifrom=None, success=None, response=None, error=None):
@@ -176,6 +172,23 @@ class DOCKER(BasePlugin):
 
     def response_master_append_deploy(self, iq_response=None, ito=None, ifrom=None, success=None, response=None, error=None):
         self._send_response(ito=ito, ifrom=ifrom, success=success, response=response, error=error, iq_response=iq_response, element='message')
+
+    def request_minion_deploy(self, application_name, container_name, key_application, ito, ifrom, timeout=None):
+	if not application_name:
+	    raise Exception("Name of application is required")
+
+	if not container_name:
+	    raise Exception("Name of container is required")
+
+	if not key_application:
+	    raise Exception("Name of etcd's key is required")
+
+	elements = {'application_name': application_name, 'container_name': container_name, 'key_application': key_application}
+
+        return self._send_request(ito=ito, ifrom=ifrom, action='deploy-container', timeout=timeout, elements=elements)
+
+    def response_minion_deploy(self, iq_response=None, ito=None, ifrom=None, success=None, response=None, error=None):
+	self._send_response(ito=ito, ifrom=ifrom, success=success, response=response, error=error, iq_response=iq_response, element='message')
 
     def request_get_name_pods(self, ito=None, ifrom=None):
         iq = self.xmpp.Iq()

@@ -94,7 +94,7 @@ class SocketThread(threading.Thread):
 
 
 class Channel(threading.Thread):
-	def __init__(self, docker_process=False, server_process=None, pod_id=None, pod_args=None, group=None, target=None):
+	def __init__(self, docker_process=False, server_process=None, pod_id=None, pod_args=None, group=None, target=None, join_result=False):
 		threading.Thread.__init__(self)
 
 		self.pod_id = pod_id
@@ -104,6 +104,7 @@ class Channel(threading.Thread):
 		self.response = None
 		self.channel_thread = SocketThread(docker_process=docker_process)
 		self._return = None
+		self.join_result = join_result
 
 	def public_address(self):
 		return self.channel_thread.public_address()
@@ -116,8 +117,8 @@ class Channel(threading.Thread):
 		self.start()
 
 	def run(self):
-		#if self._Thread__target is not None:
-		#	self._return = self._Thread__target(*self._Thread__args, **self._Thread__kwargs)
+		if self.join_result == True and self._Thread__target is not None:
+			self._return = self._Thread__target(*self._Thread__args, **self._Thread__kwargs)
 
 		try:
 			while True:
@@ -138,9 +139,9 @@ class Channel(threading.Thread):
 			self.server_process.channel_thread.unregister_pods(self.pod_id)
 			self.peer_sock.close()
 
-	#def join(self):
-	#	threading.Thread.join(self)
-	#	return self._return
+	def join(self):
+		threading.Thread.join(self)
+		return self._return
 
 	def close(self):
 		self.response = True

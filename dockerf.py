@@ -18,9 +18,9 @@ class DockerCommands:
 
     def _deploy_command(self, container_name, values, image_create=False):
         if image_create:
-            command = ['docker', 'run', '--rm']
-        else:
             command = ['docker', 'run', '-t', '-i', '--rm']
+        else:
+            command = ['docker', 'run', '--rm']
 
         if not container_name:
             raise Exception("Name of container is required")
@@ -49,6 +49,7 @@ class DockerCommands:
         command.append('-d')
         command.append(values['image'])
 
+	print(command)
         return command
 
     def _exec_command(self, command):
@@ -202,8 +203,8 @@ class DockerCommands:
                 for port in ports:
                     p = port.split('/tcp:')
 
-                    src = aux[0]
-                    dst = aux[1]
+                    src = p[0]
+                    dst = p[1]
 
                     if src in ports_container:
                         ports_container[src].append(dst)

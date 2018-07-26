@@ -213,7 +213,6 @@ class Zeus(sleekxmpp.ClientXMPP):
 	key_application = '/{0}/{1}'.format(args['customer'], args['application_name'])
 	image_name = '{0}_app-{1}'.format(args['customer'], args['application_name'])
 
-	print(values_application, key_application)
 	try:
 	    self.etcd_conn.write(key_application, values_application)
 	except Exception as e:
@@ -232,10 +231,10 @@ class Zeus(sleekxmpp.ClientXMPP):
     def _request_deploy_minion(self, args, image_name, iq_response, ifrom, key_application, first=False):
 	if len(self.minions) == 1:
 	    if first:
-		try:
-		    self._generate_image(path=args['path'], image_name=image_name, key_application=key_application, ito=self.jid_minions[0])
-		except Exception as e:
-		    raise Exception(e)
+	    	try:
+	    	    self._generate_image(path=args['path'], image_name=image_name, key_application=key_application, ito=self.jid_minions[0])
+	    	except Exception as e:
+	    	    raise Exception(e)
 
 	    for count in range(int(args['total_containers'])):
 		container_name = '{0}_app-{1}-{2}'.format(args['customer'], args['application_name'], str(count))
@@ -605,11 +604,18 @@ class Zeus(sleekxmpp.ClientXMPP):
 
     def _requet_deploy_to_minion(self, ito, application_name, key_application, container_name, ifrom):
         try:
-            self.plugin['docker'].request_first_deploy(ito=ito,
-                                                       ifrom=self.boundjid,
-                                                       name=application_name,
-                                                       key=key_application,
-                                                       user=container_name)
+	    self.plugin['docker'].request_minion_deploy(application_name=application_name,
+							container_name=container_name,
+							key_application=key_application,
+							ito=ito,
+							ifrom=self.boundjid,
+							timeout=120)
+
+            #self.plugin['docker'].request_first_deploy(ito=ito,
+            #                                           ifrom=self.boundjid,
+            #                                           name=application_name,
+            #                                           key=key_application,
+            #                                           user=container_name)
 
             self._handler_send_message(ifrom, 'success deploy container ' + container_name)
         except IqError as e:
