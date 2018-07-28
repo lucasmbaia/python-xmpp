@@ -1,4 +1,4 @@
-export etcd_url=172.16.95.183
-export xmpp_url=172.16.95.179
+export etcd_url=192.168.204.128
+export xmpp_url=192.168.204.131
 export jid=zeus@localhost
 export path_images=/images/

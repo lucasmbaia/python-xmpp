@@ -156,17 +156,17 @@ class DOCKER(BasePlugin):
     def response_master_deploy(self, iq_response=None, ito=None, ifrom=None, success=None, response=None, error=None):
         self._send_response(ito=ito, ifrom=ifrom, success=success, response=response, error=error, iq_response=iq_response, element='message')
 
-    def request_master_append_deploy(self, customer, name_application, total_containers, ito, ifrom, timeout=None):
+    def request_master_append_deploy(self, customer, application_name, total_containers, ito, ifrom, timeout=None):
         if not customer:
             raise Exception("Customer of application is required")
 
-        if not name_application:
+        if not application_name:
             raise Exception("Name of application is required")
 
         if not total_containers:
             raise Exception("Total of containers is required")
 
-        elements = {'customer': customer, 'name': name_application, 'total': total_containers}
+        elements = {'customer': customer, 'application_name': application_name, 'total_containers': total_containers}
 
         return self._send_request(ito=ito, ifrom=ifrom, action='master-append-deploy', timeout=timeout, elements=elements)
 
