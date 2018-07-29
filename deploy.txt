@@ -1,1 +1,1 @@
-deploy % --customer=lucas % --cpus=0.1 % --memory=15m % --ports=8080 % --pods=4 % --name=chaba
+deploy % --customer=lucas % --cpus=0.1 % --memory=15m % --ports=8080/http % --total=4 % --name=chaba
