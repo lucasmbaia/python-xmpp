@@ -1,9 +1,9 @@
 package main
 
 import (
-	"os"
 	"fmt"
 	"net/http"
+	"os"
 )
 
 func main() {
@@ -13,5 +13,5 @@ func main() {
 		fmt.Fprintf(w, "Hello, you've requested: %s\n", hostname)
 	})
 
-	http.ListenAndServe(":8080", nil)
+	http.ListenAndServe(":80", nil)
 }

@@ -220,10 +220,10 @@ class Zeus(sleekxmpp.ClientXMPP):
 		except Exception as e:
 			raise Exception(e)
 
-		try:
-			self._create_room(args['application_name'])
-		except Exception as e:
-			raise Exception(e)
+		#try:
+		#	self._create_room(args['application_name'])
+		#except Exception as e:
+		#	raise Exception(e)
 
 		try:
 			self._request_deploy_minion(args=args, image_name=image_name, iq_response=iq_response,
