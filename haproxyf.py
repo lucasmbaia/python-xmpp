@@ -1,6 +1,7 @@
 import ast
 import logging
 import json
+import socket
 
 from etcdf import Etcd
 
@@ -14,6 +15,7 @@ class HAProxy:
         self.appHTTPS = 'app-https'
         self.app_protocol_http = ['http', 'https']
         self.ports_http = ['80', '443']
+	self.hostname = socket.gethostname()
 
     def generate_conf(self, application_name, container_name, ports_container, protocol, address_container, dns=None):
         logging.info('Generate conf to haproxy with application: %s, container: %s' % (
@@ -57,30 +59,29 @@ class HAProxy:
         if len(keys_ports) > 0:
             try:
                 values = self._tcp_and_udp(application_name=application_name,
-                                           key_ports=key_ports,
+                                           keys_ports=keys_ports,
                                            container_name=container_name,
                                            address_container=address_container,
                                            dns=dns,
-                                           protocol=protocol)
+                                           protocol=protocol,
+					   ports_container=ports_container)
 
                 self.etcd_conn.write(self.key + application_name, json.dumps(values))
             except Exception as e:
                 raise Exception(e)
 
-    def _tcp_and_udp(self, application_name, key_ports, container_name, address_container, dns, protocol):
+    def _tcp_and_udp(self, application_name, keys_ports, container_name, address_container, dns, protocol, ports_container):
         key_exists = self.etcd_conn.key_exists(self.key + application_name)
 
         if key_exists:
             try:
-                values = ast.literal_eval(
-                    self.etcd_conn.read(self.key + application_name))
+                values = ast.literal_eval(self.etcd_conn.read(self.key + application_name))
 
                 for key in keys_ports:
                     for host in values['hosts']:
                         if 'portSRC' in host and host['portSRC'] == key:
                             for dst in ports_container[key]:
-                                host['containers'].append(
-                                    {'name': container_name, 'address': address_container + ':' + dst})
+                                host['containers'].append({'name': container_name, 'address': address_container + ':' + dst, 'minion': self.hostname})
 
             except Exception as e:
                 raise Exception(e)
@@ -91,11 +92,11 @@ class HAProxy:
                 containers = []
 
                 for dst in ports_container[key]:
-                    containers.append(
-                        {'name': container_name, 'address': address_container + ':' + dst})
+                    containers.append({'name': container_name, 'address': address_container + ':' + dst, 'minion': self.hostname})
 
-                values['hosts'].append(
-                    {'protocol': protocol[str(key)], 'portSRC': key, 'containers': containers})
+                values['hosts'].append({'protocol': protocol[str(key)], 'portSRC': key, 'containers': containers})
+
+	return values
 
     def _http_and_https(self, etcd_key, application_name, container_name, address_container, dns, ports_container):
         key_exists = self.etcd_conn.key_exists(etcd_key)
@@ -109,18 +110,15 @@ class HAProxy:
                     if 'name' in host and host['name'] == application_name:
                         contains = True
                         for dst in ports_container:
-                            host['containers'].append(
-                                {'name': container_name, 'address': address_container + ':' + dst})
+			    host['containers'].append({'name': container_name, 'address': address_container + ':' + dst, 'minion': self.hostname})
 
                 if contains == False:
                     containers = []
 
                     for dst in ports_container:
-                        containers.append(
-                            {'name': container_name, 'address': address_container + ':' + dst})
+			containers.append({'name': container_name, 'address': address_container + ':' + dst, 'minion': self.hostname})
 
-                    values['hosts'].append(
-                        {'name': application_name, 'containers': containers, 'dns': dns})
+                    values['hosts'].append({'name': application_name, 'containers': containers, 'dns': dns})
 
             except Exception as e:
                 raise Exception(e)
@@ -129,11 +127,9 @@ class HAProxy:
             containers = []
 
             for dst in ports_container:
-                containers.append(
-                    {'name': container_name, 'address': address_container + ':' + dst})
+		containers.append({'name': container_name, 'address': address_container + ':' + dst, 'minion': self.hostname})
 
-            values['hosts'].append(
-                {'name': application_name, 'containers': containers, 'dns': dns})
+	    values['hosts'].append({'name': application_name, 'containers': containers, 'dns': dns, 'minion': self.hostname})
 
         return values
 
