@@ -31,7 +31,7 @@ class DockerCommands:
 		if 'args' in values:
 			for x in values['args']:
 				command.append('--env')
-				command.append(x + '=' + values['args']['x'])
+				command.append(x + '=' + values['args'][x])
 
 		if 'ports_dst' in values:
 			command.append('-P')
@@ -158,6 +158,7 @@ class DockerCommands:
 		except Exception as e:
 			raise Exception(e)
 
+		print(command)
 		try:
 			resp = self._exec_command(command)
 

@@ -201,8 +201,7 @@ class Zeus(sleekxmpp.ClientXMPP):
         if len(self.minions) == 0:
             raise Exception('Not have hosts to start the deploy')
 
-        image = '{0}_app-{1}/image:v1'.format(
-            args['customer'], args['application_name'])
+        image = '{0}_app-{1}/image:v1'.format(args['customer'], args['application_name'])
         ports_and_protocols = args['ports'].strip().split(',')
         protocol = {}
         ports = []
@@ -213,12 +212,14 @@ class Zeus(sleekxmpp.ClientXMPP):
             ports.append(pp[0])
             protocol[pp[0]] = pp[1]
 
-        values_application = {'cpus': args['cpus'], 'memory': args['memory'], 'ports_dst': ports,
-                              'protocol': protocol, 'image': image, 'total_containers': args['total_containers'], 'dns': args['dns']}
-        key_application = '/{0}/{1}'.format(
-            args['customer'], args['application_name'])
-        image_name = '{0}_app-{1}'.format(args['customer'],
-                                          args['application_name'])
+        values_application = {'cpus': args['cpus'], 'memory': args['memory'], 'ports_dst': ports, 'protocol': protocol, 'image': image, 'total_containers': args['total_containers'], 'dns': args['dns']}
+
+	if 'args' in args:
+	    values_application['args'] = args['args']
+
+	print("PASSOU DAQUI")
+        key_application = '/{0}/{1}'.format(args['customer'], args['application_name'])
+        image_name = '{0}_app-{1}'.format(args['customer'], args['application_name'])
 
         try:
             self.etcd_conn.write(key_application, values_application)
@@ -271,20 +272,18 @@ class Zeus(sleekxmpp.ClientXMPP):
 
     def _request_deploy_minion(self, args, image_name, iq_response, ifrom, key_application, total_containers, first=False, start_count=1):
         if len(self.minions) == 1:
+	    print("TAMO AQUI")
             if first:
                 try:
-                    self._generate_image(
-                        path=args['path'], image_name=image_name, key_application=key_application, ito=self.jid_minions[0])
+                    self._generate_image(path=args['path'], image_name=image_name, key_application=key_application, ito=self.jid_minions[0])
                 except Exception as e:
                     raise Exception(e)
 
             for count in range(int(total_containers)):
-                container_name = '{0}_app-{1}-{2}'.format(
-                    args['customer'], args['application_name'], str(start_count))
+                container_name = '{0}_app-{1}-{2}'.format(args['customer'], args['application_name'], str(start_count))
                 start_count += 1
 
-                thread_deploy_minion = threading.Thread(target=self._requet_deploy_to_minion, args=[
-                    self.jid_minions[0], args['application_name'], key_application, container_name, ifrom])
+                thread_deploy_minion = threading.Thread(target=self._requet_deploy_to_minion, args=[self.jid_minions[0], args['application_name'], key_application, container_name, ifrom])
                 thread_deploy_minion.daemon = True
                 thread_deploy_minion.start()
         else:
@@ -460,8 +459,7 @@ class Zeus(sleekxmpp.ClientXMPP):
 
         print(application_name, customer, values)
         try:
-            self._deploy_application(
-                args=values, iq_response=None, ifrom=msg['from'])
+            self._deploy_application(args=values, iq_response=None, ifrom=msg['from'])
         except IqError as e:
             self._handler_send_message(
                 msg['from'], unicode(e.iq['error']['text']))
@@ -655,6 +653,7 @@ class Zeus(sleekxmpp.ClientXMPP):
 #			iterator += minions_pods[key]
 
     def _generate_image(self, path, image_name, key_application, ito):
+	print(path, image_name, key_application, ito)
         try:
             self.plugin['docker'].request_generate_image(path=path,
                                                          name=image_name,
@@ -789,11 +788,10 @@ class Zeus(sleekxmpp.ClientXMPP):
                 options['memory'] = value.replace("--memory=", "").strip()
             if "--args" in value:
                 dic = {}
-                args = value.strip().replace(
-                    "--args[", "").replace("]", "").strip(',')
+                args = value.strip().replace("--args[", "").replace("]", "").split(',')
 
                 for arg in args:
-                    x = arg.split(':')
+                    x = arg.replace('"', '').split(':')
                     dic[x[0]] = x[1]
 
                 options['args'] = dic

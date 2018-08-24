@@ -396,21 +396,19 @@ class Minion(sleekxmpp.ClientXMPP):
         logging.info('Received the request to create image: %s' % (image_name))
 
         try:
-            values = ast.literal_eval(self.etcd_conn.read(key_etcd))
+	    values = ast.literal_eval(self.etcd_conn.read(key_etcd))
         except Exception as e:
             raise Exception(e)
 
         values['image'] = 'alpine'
-        args = {'from': str(ifrom), 'container_name': str(
-                image_name), 'iq_response': str(iq_response), 'path': str(path)}
+        args = {'from': str(ifrom), 'container_name': str(image_name), 'iq_response': str(iq_response), 'path': str(path)}
 
         self.container_deploy_start.append(image_name)
         self.channel_connections[image_name] = Channel(server_process=self.docker_process,
                                                        pod_id=image_name,
                                                        pod_args=args)
 
-        self.channel_connections[image_name].register(
-            self.docker_process.public_address(), self._check_generate_image)
+        self.channel_connections[image_name].register(self.docker_process.public_address(), self._check_generate_image)
 
         try:
             self.docker_commands.deploy(
