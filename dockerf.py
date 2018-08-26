@@ -83,7 +83,7 @@ class DockerCommands:
 			if resp is not None:
 				resp = resp.replace('"', '').split('\n')[:-1]
 
-			return response
+			return resp
 		except Exception as e:
 			raise Exception(e)
 
