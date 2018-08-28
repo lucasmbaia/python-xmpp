@@ -1,4 +1,5 @@
-package: github.com/lucasmbaia/elasticsearch
+package: github.com/lucasmbaia/python-xmpp/go/elasticsearch
 import:
 - package: github.com/olivere/elastic
+  version: v6.1.25
 - package: github.com/Shopify/sarama
